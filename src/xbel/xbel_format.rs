@@ -1,10 +1,15 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use quick_xml::events::Event::Comment;
 // XBEL: XMLBookmarkExchangeLanguage
 use serde::{Deserialize, Serialize, 
             //Serializer
             };
 // use serde::ser::SerializeStruct;
+use quick_xml::writer::Writer;
+use quick_xml::events::{
+    BytesEnd, BytesStart, BytesText, Event::*
+};
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
@@ -194,6 +199,113 @@ impl Xbel {
             }
         }
     }
+
+    pub(crate) fn write_to_string(&self) -> String {
+
+        // Note:
+        // TODO: quick_xml limitations/bugs
+        
+        let mut writer = Writer::new_with_indent(Vec::new(), ' ' as u8, 2);
+        let comment = format!(
+            " highestId :{}: for Floccus bookmark sync browser extension ",
+            self.get_highest_id()
+        );
+        writer.write_event(Comment(
+            BytesText::new(comment.as_str())
+        )).expect("writing comment should succeed");
+
+        for item in self.items.iter() {
+            write_xbel_item(&mut writer, item);
+        }
+        
+        let result_ = writer.into_inner();
+        
+        const XML_HEADER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">
+"#;
+        const XBEL_START: &str = "<xbel version=\"1.0\">\n";
+        const XBEL_END: &str = "\n</xbel>\n";
+        
+        let mut result = String::with_capacity(result_.len() 
+            + XML_HEADER.len()
+            + XBEL_START.len() 
+            + XBEL_END.len()
+        );
+        
+        result.push_str(XML_HEADER);
+        result.push_str(XBEL_START);
+        result.push_str(String::from_utf8(result_).unwrap().as_str());
+        result.push_str(XBEL_END);
+        
+        result
+    }
+}
+
+fn write_xbel_item<W: std::io::Write>(writer: &mut Writer<W>, item: &XbelItem) {
+    match item {
+        XbelItem::Folder(f) => {
+            writer
+                .write_event(Start(
+                    BytesStart::new("folder")
+                        .with_attributes([("id", f.id.to_string().as_str() )]),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(Start(
+                    BytesStart::new("title"),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(Text(
+                    BytesText::new(f.title.text.as_str()),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(End(
+                    BytesEnd::new("title"),
+                ))
+                .expect("writing start tag should succeed");
+            for it in f.items.iter() {
+                write_xbel_item(writer, it)
+            }
+            writer
+                .write_event(End(
+                    BytesEnd::new("folder"),
+                ))
+                .expect("writing start tag should succeed");
+        }
+        XbelItem::Bookmark(b) => {
+            writer
+                .write_event(Start(
+                    BytesStart::new("bookmark")
+                        .with_attributes([
+                            ("href", b.href.as_str()),
+                            ("id", b.id.as_str()),
+                        ]),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(Start(
+                    BytesStart::new("title"),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(Text(
+                    BytesText::new(b.title.text.as_str()),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(End(
+                    BytesEnd::new("title"),
+                ))
+                .expect("writing start tag should succeed");
+            writer
+                .write_event(End(
+                    BytesEnd::new("bookmark"),
+                ))
+                .expect("writing start tag should succeed");
+        }
+    }
 }
 
 impl<'a> IntoIterator for &'a Xbel {
@@ -246,6 +358,7 @@ impl<'a> Iterator for XbelIterator<'a> {
 mod tests {
     use super::*;
     use quick_xml::de::from_str;
+    use quick_xml::Writer;
 
     const XBEL_EMPTY: &str = r#"
             <?xml version="1.0" encoding="UTF-8"?>
@@ -401,10 +514,9 @@ mod tests {
         println!("xbel: {:?}", xbel);
         Ok(())
     }
-
+    
     #[test]
-    fn write_xbel_1() -> Result<(), quick_xml::errors::serialize::DeError> {
-
+    fn write_xbel() -> Result<(), quick_xml::errors::serialize::DeError> {
         let url_e = "www.ecosia.org";
         let bookmark_e = XbelItem::Bookmark(
             Bookmark::new("1", url_e, "My main search engine")
@@ -428,18 +540,11 @@ mod tests {
             bookmark_e,
             folder_a,
         ]));
-
-        // let ser = to_string(&xbel)?;
-        let mut buffer_ = String::new();
-        let mut ser = quick_xml::se::Serializer::new(&mut buffer_);
-        ser.indent(' ', 2);
-        xbel.serialize(ser)?;
+    
+        let buffer = xbel.write_to_string();
         
-        // Add xml header + the xml highest id (as a xml comment)
-        let buffer = xbel.add_header(&buffer_);
-        
-        // println!("buffer:");
-        // println!("{}", buffer);
+        println!("buffer:");
+        println!("{}", buffer);
 
         assert!(buffer.starts_with(xbel.xml_header()));
         assert!(buffer.find(url_e).is_some());
@@ -447,6 +552,51 @@ mod tests {
         assert!(buffer.find(title_g).is_some());
         assert!(buffer.find(url_b).is_some());
         
+        Ok(())
+    }
+    
+    #[test]
+    fn write_xbel_ser() -> Result<(), quick_xml::errors::serialize::DeError> {
+        let url_e = "www.ecosia.org";
+        let bookmark_e = XbelItem::Bookmark(
+            Bookmark::new("1", url_e, "My main search engine")
+        );
+        let url_g = "www.google.com";
+        let title_g = "A good search engine";
+        let bookmark_g = XbelItem::Bookmark(
+            Bookmark::new("4", url_g, title_g)
+        );
+        let url_b = "www.bing.com";
+        let bookmark_b = XbelItem::Bookmark(
+            Bookmark::new("5", url_b, "Another good search engine")
+        );
+
+        let folder_a = XbelItem::Folder(Folder::new("2", "Search engines", Some(vec![
+            bookmark_g,
+            bookmark_b
+        ])));
+
+        let xbel = Xbel::new(Some(vec![
+            bookmark_e,
+            folder_a,
+        ]));
+        
+        let mut buffer_ = String::new();
+        let mut ser = quick_xml::se::Serializer::new(&mut buffer_);
+        ser.indent(' ', 2);
+        xbel.serialize(ser)?;
+        // Add xml header + the xml highest id (as a xml comment)
+        let buffer = xbel.add_header(&buffer_);
+
+        println!("buffer:");
+        println!("{}", buffer);
+
+        assert!(buffer.starts_with(xbel.xml_header()));
+        assert!(buffer.find(url_e).is_some());
+        assert!(buffer.find(url_g).is_some());
+        assert!(buffer.find(title_g).is_some());
+        assert!(buffer.find(url_b).is_some());
+
         Ok(())
     }
 }

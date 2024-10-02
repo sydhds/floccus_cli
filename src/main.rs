@@ -11,12 +11,9 @@ use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
 use git2::Repository;
 use quick_xml::de::from_reader;
-// use quick_xml::se::to_writer;
-use serde::Serialize;
 // internal
 use crate::xbel::{XbelItem, Xbel, XbelPath};
 use crate::git::{git_clone, git_fetch, git_merge};
-use crate::xbel::XbelPath::Path;
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "clap-subcommand")]
@@ -72,6 +69,16 @@ impl FromStr for Under {
                     Ok(Under::Folder(PathBuf::from(s)))
                 }
             }
+        }
+    }
+}
+
+impl From<&Under> for XbelPath {
+    fn from(value: &Under) -> Self {
+        match value {
+            Under::Root => XbelPath::Root,
+            Under::Id(id) => XbelPath::Id(*id), 
+            _ => unreachable!()
         }
     }
 }
@@ -236,7 +243,9 @@ fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf) -> Result<(), Bo
     let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
 
     let highest_id = xbel.get_highest_id();
-    let items_ = xbel.get_items_mut(XbelPath::Root);
+    let xbel_path = XbelPath::from(&add_args.under);
+
+    let items_ = xbel.get_items_mut(xbel_path);
     let bookmark = XbelItem::new_bookmark(
         (highest_id + 1).to_string().as_str(), add_args.url.as_str(), add_args.title.as_str()
     );
@@ -245,23 +254,16 @@ fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf) -> Result<(), Bo
         items.push(bookmark);
     }
     
-    // println!("xbel: {:?}", xbel);
-    /*
+    println!("xbel: {:?}", xbel);
     {
         let mut f = std::fs::File::options()
             .write(true)
             .open(bookmark_file_path)?;
-        
-        let mut buffer_ = String::new();
-        let mut ser = quick_xml::se::Serializer::new(&mut buffer_);
-        ser.indent(' ', 2);
-        xbel.serialize(ser)?;
-        // Add xml header + the xml highest id (as a xml comment)
-        let buffer = xbel.add_header(&buffer_);
+
+        let buffer = xbel.write_to_string();
         f.write_all(buffer.as_bytes())?;
     }
-    */
-    
+
     if !add_args.disable_push {
         panic!("TODO git push");
     }
