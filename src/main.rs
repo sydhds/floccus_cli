@@ -4,7 +4,7 @@ mod git;
 // std
 use std::error::Error;
 use std::io::{BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 // third-party
 use clap::{Args, Parser, Subcommand};
@@ -12,7 +12,7 @@ use directories::ProjectDirs;
 use git2::Repository;
 use quick_xml::de::from_reader;
 // internal
-use crate::xbel::{XbelItem, Xbel, XbelPath};
+use crate::xbel::{XbelItem, Xbel, XbelPath, XbelNestingIterator, XbelItemOrEnd};
 use crate::git::{git_clone, git_fetch, git_merge};
 
 #[derive(Debug, Clone, Parser)]
@@ -78,7 +78,7 @@ impl From<&Under> for XbelPath {
         match value {
             Under::Root => XbelPath::Root,
             Under::Id(id) => XbelPath::Id(*id), 
-            _ => unreachable!()
+            _ => unimplemented!()
         }
     }
 }
@@ -105,19 +105,23 @@ fn under_parser(s: &str) -> Result<Under, &'static str> {
                 Ok(Under::Folder(PathBuf::from(s)))
             }
         }
-    } 
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Args)]
-pub struct RemoveArgs {}
-
+pub struct RemoveArgs {
+    #[arg(short = 'i', long = "item", help = "Remove bookmark or folder", value_parser=under_parser)]
+    under: Under,
+    #[arg(long = "disable-push", help = "Add the new bookmark locally but do not push (git push) it", action, required=false)]
+    disable_push: bool,
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
 
     let cli = Cli::parse();
     println!("cli: {:?}", cli);
 
-    let repository_folder = if let Some(repository_url) = cli.repository_url {
+    let (repository_folder, repo) = if let Some(repository_url) = cli.repository_url {
         
         // repository url provided by user -> should clone
 
@@ -141,7 +145,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             commit.message()
         );
 
-        repository_folder
+        let repo = Repository::open(repository_folder.as_path())?;
+        (repository_folder, repo)
 
     } else {
 
@@ -178,7 +183,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let fetch_commit = git_fetch(&repo, &[remote_branch], &mut remote)?;
         git_merge(&repo, remote_branch, fetch_commit)?;
 
-        repository_folder
+        // FIXME: no re-open ?
+        let repo = Repository::open(repository_folder.as_path())?;
+        (repository_folder, repo)
     };
     
     match cli.command {
@@ -186,7 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             bookmark_print(&print_args, repository_folder)?;
         }
         Commands::Add(add_args) => {
-            bookmark_add(&add_args, repository_folder)?;
+            bookmark_add(&add_args, repository_folder, &repo)?;
         }
         Commands::Rm(_) => {
             unimplemented!()
@@ -200,16 +207,44 @@ fn bookmark_print(
     _print_args: &PrintArgs,
     repository_folder: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
+
+    const FOLDER_EMOTICON: &str = "\u{1F4C1}";
+    const _FOLDER_LINK: &str = "\u{1F310}";
+    const FOLDER_LINK1: &str = "\u{1F517}";
+    const INDENTER: fn(usize) -> String = |indent_spaces| " ".repeat(indent_spaces);
+
     let bookmark_file_path = repository_folder.join("bookmarks.xbel");
     let xbel_ = std::fs::File::open(bookmark_file_path)?;
     let xbel: Xbel = from_reader(BufReader::new(xbel_))?;
     
     // TODO: use iterator here?
+    /*
     let indent_spaces = 0;
     for item in xbel.items.iter() {
         print_xbel_item(item, indent_spaces);
     }
-    
+    */
+
+    let it = XbelNestingIterator::new(&xbel);
+    let mut indent_spaces = 0;
+    for item in it {
+        match item {
+            XbelItemOrEnd::End(_) => indent_spaces -= 2,
+            XbelItemOrEnd::Item(XbelItem::Folder(f)) => {
+                println!(
+                    "{}[{FOLDER_EMOTICON} {}] {}",
+                    INDENTER(indent_spaces), f.id, f.title.text
+                );
+                indent_spaces += 2;
+            },
+            XbelItemOrEnd::Item(XbelItem::Bookmark(b)) => {
+                let indent = INDENTER(indent_spaces);
+                println!("{}[{FOLDER_LINK1} {}] {}", indent, b.id, b.title.text);
+                println!("{}- {}", indent, b.href);
+            },
+        }
+    }
+
     Ok(())
 }
 
@@ -237,8 +272,9 @@ fn print_xbel_item(item: &XbelItem, indent_spaces: usize) {
     }
 }
 
-fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf) -> Result<(), Box<dyn Error>> {
-    let bookmark_file_path = repository_folder.join("bookmarks.xbel");
+fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf, repo: &Repository) -> Result<(), Box<dyn Error>> {
+    let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
+    let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
     let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
     let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
 
@@ -258,14 +294,48 @@ fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf) -> Result<(), Bo
     {
         let mut f = std::fs::File::options()
             .write(true)
-            .open(bookmark_file_path)?;
+            .open(bookmark_file_path.as_path())?;
 
         let buffer = xbel.write_to_string();
         f.write_all(buffer.as_bytes())?;
     }
 
     if !add_args.disable_push {
-        panic!("TODO git push");
+
+        // Configured author signature
+        let author = repo.signature().unwrap();
+
+        // git add
+        let status = repo.status_file(bookmark_file_path_xbel.as_path()).unwrap();
+        println!("status: {:?}", status);
+        let mut index = repo.index()?;
+        index.add_path(bookmark_file_path_xbel.as_path())?;
+        // the modified in-memory index need to flush back to disk
+        index.write()?;
+
+        // git commit
+
+        // returns the object id you can use to lookup the actual tree object
+        let new_tree_oid = index.write_tree().unwrap();
+        // this is our new tree, i.e. the root directory of the new commit
+        let new_tree = repo.find_tree(new_tree_oid).unwrap();
+
+        // for simple commit, use current head as parent
+        // TODO: test
+        // you need more than one parent if the commit is a merge
+        let head = repo.head().unwrap();
+        let parent = repo.find_commit(head.target().unwrap()).unwrap();
+
+        repo
+            .commit(
+                Some("HEAD"),
+                &author,
+                &author,
+                "Floccus bookmarks update",
+                &new_tree,
+                &[&parent],
+            )
+            .unwrap();
     }
 
     Ok(())
