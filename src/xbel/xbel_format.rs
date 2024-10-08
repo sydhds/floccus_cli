@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use quick_xml::events::Event::Comment;
 // XBEL: XMLBookmarkExchangeLanguage
@@ -70,7 +71,7 @@ impl XbelItem {
             XbelItem::Bookmark(b) => { &b.title }
         }
     }
-    fn get_id(&self) -> &String {
+    pub(crate) fn get_id(&self) -> &String {
         match self {
             XbelItem::Folder(f) => { &f.id }
             XbelItem::Bookmark(b) => { &b.id }
@@ -113,10 +114,21 @@ pub struct Xbel {
     pub(crate) items: Vec<XbelItem>,
 }
 
+#[derive(Debug, Clone)]
 pub enum XbelPath {
     Root,
     Id(u64),
     Path(PathBuf)
+}
+
+impl Display for XbelPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            XbelPath::Root => write!(f, "root"),
+            XbelPath::Id(id) => write!(f, "id = {}", id),
+            XbelPath::Path(p) => write!(f, "path = {}", p.display()),
+        }
+    }
 }
 
 impl Xbel {
@@ -164,7 +176,7 @@ impl Xbel {
         })
     }
     
-    pub(crate) fn get_items_mut(&mut self, path: XbelPath) -> Option<&mut Vec<XbelItem>> {
+    pub(crate) fn get_items_mut(&mut self, path: &XbelPath) -> Option<&mut Vec<XbelItem>> {
         match path {
             XbelPath::Root => Some(&mut self.items),
             XbelPath::Id(id) => {
@@ -174,7 +186,7 @@ impl Xbel {
                         .iter()
                         .find(|item| {
                             let item_id = item.get_id().parse::<u64>().unwrap();
-                            item_id == id
+                            item_id == *id
                         });
                     if found.is_some() {
                         return Some(items);
@@ -613,9 +625,9 @@ mod tests {
         println!("xbel: {:?}", xbel);
         assert_eq!(xbel.get_highest_id(), 0);
         let bookmark_id = (xbel.get_highest_id() + 1).to_string();
-        let items_0 = xbel.get_items_mut(XbelPath::Id(1));
+        let items_0 = xbel.get_items_mut(&XbelPath::Id(1));
         assert!(items_0.is_none());
-        let items = xbel.get_items_mut(XbelPath::Root).unwrap();
+        let items = xbel.get_items_mut(&XbelPath::Root).unwrap();
         println!("items: {:?}", items);
         let bookmark = Bookmark::new(bookmark_id.as_str(), "https://www.example_bank.com", "Example bank");
         items.push(XbelItem::Bookmark(bookmark));
@@ -628,7 +640,7 @@ mod tests {
         let mut xbel: Xbel = from_str(XBEL_BANK)?;
         println!("xbel: {:?}", xbel);
         let bookmark_id = (xbel.get_highest_id() + 1).to_string();
-        let items = xbel.get_items_mut(XbelPath::Id(4)).unwrap();
+        let items = xbel.get_items_mut(&XbelPath::Id(4)).unwrap();
         println!("items: {:?}", items);
         let bookmark = Bookmark::new(bookmark_id.as_str(), "https://www.example_bank.com", "Example bank");
         items.push(XbelItem::Bookmark(bookmark));

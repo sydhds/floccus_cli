@@ -11,6 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
 use git2::Repository;
 use quick_xml::de::from_reader;
+use thiserror::Error;
 // internal
 use crate::xbel::{XbelItem, Xbel, XbelPath, XbelNestingIterator, XbelItemOrEnd};
 use crate::git::{git_clone, git_fetch, git_merge};
@@ -193,12 +194,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             bookmark_print(&print_args, repository_folder)?;
         }
         Commands::Add(add_args) => {
-            bookmark_add(&add_args, repository_folder, &repo)?;
+            let res = bookmark_add(&add_args, repository_folder, &repo);
+            match res {
+                Err(e) => eprintln!("Error: {}", e), // FIXME: should we exit with code 1?
+                _ => {}
+            }
         }
         Commands::Rm(_) => {
             unimplemented!()
         }
-    }
+    };
 
     Ok(())
 }
@@ -272,24 +277,69 @@ fn print_xbel_item(item: &XbelItem, indent_spaces: usize) {
     }
 }
 
-fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf, repo: &Repository) -> Result<(), Box<dyn Error>> {
+#[derive(Error, Debug)]
+enum BookmarkAddError {
+    #[error("Error while reading Xbel file")]
+    IoError(#[from] std::io::Error),
+    #[error("Cannot read Xbel file")]
+    XbelReadError(#[from] quick_xml::de::DeError),
+    #[error("Cannot find anything in Xbel matching: {0}")]
+    XbelPathNotFound(XbelPath),
+    #[error("Cannot find anything in Xbel matching id: {0}")]
+    IdNotFound(String),
+    #[error("Item found with id: {0} is not a folder")]
+    NotaFolder(String),
+    // TODO: remap error GitAddError, GitCommitError ...
+    #[error("Git error")]
+    GitError(#[from] git2::Error),
+}
+
+fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf, repo: &Repository) -> Result<(), BookmarkAddError> {
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
     let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
     let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
 
+    // Build the bookmark
     let highest_id = xbel.get_highest_id();
-    let xbel_path = XbelPath::from(&add_args.under);
-
-    let items_ = xbel.get_items_mut(xbel_path);
+    // TODO: Xbel::new_bookmark + auto id ?
     let bookmark = XbelItem::new_bookmark(
         (highest_id + 1).to_string().as_str(), add_args.url.as_str(), add_args.title.as_str()
     );
-    
-    if let Some(items) = items_ {
-        items.push(bookmark);
-    }
-    
+
+    // Find where to put the bookmark
+    let xbel_path = XbelPath::from(&add_args.under);
+    let items = xbel
+        .get_items_mut(&xbel_path)
+        .ok_or(BookmarkAddError::XbelPathNotFound(xbel_path.clone()))?;
+
+    let items = match xbel_path {
+        XbelPath::Root => {
+            items
+        },
+        XbelPath::Id(id) => {
+            // Note:
+            // items == the items containing a Folder/Bookmark with the requested id
+            // , but we want to add the bookmark inside the folder
+
+            let item = items
+                .iter_mut()
+                .find(|i| {
+                    *i.get_id() == id.to_string()
+                })
+                .ok_or(BookmarkAddError::IdNotFound(id.to_string()))?;
+
+            match item {
+                XbelItem::Folder(f) => &mut f.items,
+                _ => return Err(
+                    BookmarkAddError::IdNotFound(id.to_string())
+                ),
+            }
+        }
+        XbelPath::Path(_) => unimplemented!()
+    };
+    items.push(bookmark);
+
     println!("xbel: {:?}", xbel);
     {
         let mut f = std::fs::File::options()
@@ -303,10 +353,10 @@ fn bookmark_add(add_args: &AddArgs, repository_folder: PathBuf, repo: &Repositor
     if !add_args.disable_push {
 
         // Configured author signature
-        let author = repo.signature().unwrap();
+        let author = repo.signature()?;
 
         // git add
-        let status = repo.status_file(bookmark_file_path_xbel.as_path()).unwrap();
+        let status = repo.status_file(bookmark_file_path_xbel.as_path())?;
         println!("status: {:?}", status);
         let mut index = repo.index()?;
         index.add_path(bookmark_file_path_xbel.as_path())?;

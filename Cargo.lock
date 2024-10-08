@@ -150,6 +150,7 @@ dependencies = [
  "git2",
  "quick-xml",
  "serde",
+ "thiserror",
 ]
 
 [[package]]
