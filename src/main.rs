@@ -204,13 +204,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // FIXME: should we exit with code 1?
                 eprintln!("Error: {}", e);
             }
-
-            /*
-            match res {
-                Err(e) => eprintln!("Error: {}", e),
-                _ => {}
-            }
-            */
         }
         Commands::Rm(_) => {
             unimplemented!()
@@ -298,9 +291,9 @@ fn print_xbel_item(item: &XbelItem, indent_spaces: usize) {
 enum BookmarkAddError {
     #[error("Error: please provide git repository url (or use --disable-push)")]
     PushWithoutUrl,
-    #[error("Error while reading Xbel file")]
+    #[error("Error while reading Xbel file: {0}")]
     IoError(#[from] std::io::Error),
-    #[error("Cannot read Xbel file")]
+    #[error("Cannot read Xbel file: {0}")]
     XbelReadError(#[from] quick_xml::de::DeError),
     #[error("Cannot find anything in Xbel matching: {0}")]
     XbelPathNotFound(XbelPath),
@@ -309,7 +302,7 @@ enum BookmarkAddError {
     // #[error("Item found with id: {0} is not a folder")]
     // NotaFolder(String),
     // TODO: remap error GitAddError, GitCommitError ...
-    #[error("Git error")]
+    #[error(transparent)]
     GitError(#[from] git2::Error),
 }
 
