@@ -20,8 +20,8 @@ pub fn git_clone(url: &str, to_path: &Path) -> Result<Repository, git2::Error> {
         true
     });
     */
-    
-    let mut co = CheckoutBuilder::new();
+
+    let co = CheckoutBuilder::new();
     /*
     co.progress(|path, cur, total| {
         let mut state = state.borrow_mut();
@@ -32,7 +32,7 @@ pub fn git_clone(url: &str, to_path: &Path) -> Result<Repository, git2::Error> {
     });
     */
 
-    let mut fo = FetchOptions::new();
+    let fo = FetchOptions::new();
     // fo.remote_callbacks(cb);
     RepoBuilder::new()
         .fetch_options(fo)
@@ -45,7 +45,6 @@ pub fn git_fetch<'a>(
     refs: &[&str],
     remote: &'a mut git2::Remote,
 ) -> Result<git2::AnnotatedCommit<'a>, git2::Error> {
-
     /*
     let mut cb = git2::RemoteCallbacks::new();
 
