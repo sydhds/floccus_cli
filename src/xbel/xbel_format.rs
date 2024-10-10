@@ -182,16 +182,21 @@ impl Xbel {
         match path {
             XbelPath::Root => Some(&mut self.items),
             XbelPath::Id(id) => {
+                
+                // All the Vec<XbelItem> to check (in order to find the id)
                 let mut to_process = VecDeque::from([&mut self.items]);
                 while let Some(items) = to_process.pop_front() {
-                    let found = items.iter().find(|item| {
-                        let item_id = item.get_id().parse::<u64>().unwrap();
-                        item_id == *id
-                    });
+                    let found = items
+                        .iter()
+                        .find(|item| {
+                            let item_id = item.get_id().parse::<u64>().unwrap();
+                            item_id == *id
+                        });
                     if found.is_some() {
                         return Some(items);
                     }
 
+                    // If not found yet, update to_process
                     for item in items.iter_mut() {
                         match item {
                             XbelItem::Folder(ref mut f) => {

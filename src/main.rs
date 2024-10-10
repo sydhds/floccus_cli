@@ -57,9 +57,17 @@ pub(crate) enum Commands {
 pub struct PrintArgs {}
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Placement {
+    Before,
+    After,
+    InFolderPrepend,
+    InFolderAppend,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Under {
     Root,
-    Id(u64),
+    Id(u64, Placement),
     Folder(PathBuf),
 }
 
@@ -67,11 +75,30 @@ impl FromStr for Under {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+        const PLACEMENT_AFTER_PREFIX: &str = "after=";
+        const PLACEMENT_BEFORE_PREFIX: &str = "before=";
+        const PLACEMENT_APPEND_PREFIX: &str = "append=";
+        const PLACEMENT_PREPEND_PREFIX: &str = "prepend=";
+
         match s {
             "root" => Ok(Under::Root),
             _ => {
-                if let Ok(s_id) = s.parse::<u64>() {
-                    Ok(Under::Id(s_id))
+
+                let (rem, placement) = if s.starts_with(PLACEMENT_AFTER_PREFIX) {
+                    (&s[PLACEMENT_AFTER_PREFIX.len()..], Placement::After)
+                } else if s.starts_with(PLACEMENT_BEFORE_PREFIX) {
+                    (&s[PLACEMENT_BEFORE_PREFIX.len()..], Placement::Before)
+                } else if s.starts_with(PLACEMENT_APPEND_PREFIX) {
+                    (&s[PLACEMENT_APPEND_PREFIX.len()..], Placement::InFolderAppend)
+                } else if s.starts_with(PLACEMENT_PREPEND_PREFIX) {
+                    (&s[PLACEMENT_PREPEND_PREFIX.len()..], Placement::InFolderPrepend)
+                } else {
+                    (s, Placement::InFolderAppend)
+                };
+
+                if let Ok(s_id) = rem.parse::<u64>() {
+                    Ok(Under::Id(s_id, placement))
                 } else {
                     Ok(Under::Folder(PathBuf::from(s)))
                 }
@@ -84,7 +111,7 @@ impl From<&Under> for XbelPath {
     fn from(value: &Under) -> Self {
         match value {
             Under::Root => XbelPath::Root,
-            Under::Id(id) => XbelPath::Id(*id),
+            Under::Id(id, _) => XbelPath::Id(*id),
             _ => unimplemented!(),
         }
     }
@@ -107,17 +134,9 @@ pub struct AddArgs {
     disable_push: bool,
 }
 
+// FIXME: Result error fix
 fn under_parser(s: &str) -> Result<Under, &'static str> {
-    match s {
-        "root" => Ok(Under::Root),
-        _ => {
-            if let Ok(s_id) = s.parse::<u64>() {
-                Ok(Under::Id(s_id))
-            } else {
-                Ok(Under::Folder(PathBuf::from(s)))
-            }
-        }
-    }
+    Under::from_str(s).map_err(|_| "cannot parse under argument")
 }
 
 #[derive(Debug, Clone, PartialEq, Args)]
@@ -299,8 +318,8 @@ enum BookmarkAddError {
     XbelPathNotFound(XbelPath),
     #[error("Cannot find anything in Xbel matching id: {0}")]
     IdNotFound(String),
-    // #[error("Item found with id: {0} is not a folder")]
-    // NotaFolder(String),
+    #[error("Item found with id: {0} is not a folder")]
+    NotaFolder(String),
     // TODO: remap error GitAddError, GitCommitError ...
     #[error(transparent)]
     GitError(#[from] git2::Error),
@@ -344,7 +363,7 @@ fn bookmark_add(
 
             match item {
                 XbelItem::Folder(f) => &mut f.items,
-                _ => return Err(BookmarkAddError::IdNotFound(id.to_string())),
+                _ => return Err(BookmarkAddError::NotaFolder(id.to_string())),
             }
         }
         XbelPath::Path(_) => unimplemented!(),
