@@ -68,7 +68,7 @@ pub enum Placement {
 pub enum Under {
     Root,
     Id(u64, Placement),
-    Folder(PathBuf),
+    Folder(String),
 }
 
 impl FromStr for Under {
@@ -100,7 +100,7 @@ impl FromStr for Under {
                 if let Ok(s_id) = rem.parse::<u64>() {
                     Ok(Under::Id(s_id, placement))
                 } else {
-                    Ok(Under::Folder(PathBuf::from(s)))
+                    Ok(Under::Folder(s.to_string()))
                 }
             }
         }
@@ -112,7 +112,7 @@ impl From<&Under> for XbelPath {
         match value {
             Under::Root => XbelPath::Root,
             Under::Id(id, _) => XbelPath::Id(*id),
-            _ => unimplemented!(),
+            Under::Folder(p) => XbelPath::Path(p.clone()),
         }
     }
 }
@@ -318,7 +318,9 @@ enum BookmarkAddError {
     XbelPathNotFound(XbelPath),
     #[error("Cannot find anything in Xbel matching id: {0}")]
     IdNotFound(String),
-    #[error("Item found with id: {0} is not a folder")]
+    #[error("Cannot find anything in Xbel matching path: {0}")]
+    PathNotFound(String),
+    #[error("Item found with id: {0} but it is not a folder")]
     NotaFolder(String),
     // TODO: remap error GitAddError, GitCommitError ...
     #[error(transparent)]
@@ -349,26 +351,70 @@ fn bookmark_add(
         .get_items_mut(&xbel_path)
         .ok_or(BookmarkAddError::XbelPathNotFound(xbel_path.clone()))?;
 
-    let items = match xbel_path {
-        XbelPath::Root => items,
+    match xbel_path {
+        XbelPath::Root => items.push(bookmark),
         XbelPath::Id(id) => {
-            // Note:
-            // items == the items containing a Folder/Bookmark with the requested id
-            // , but we want to add the bookmark inside the folder
-
-            let item = items
-                .iter_mut()
-                .find(|i| *i.get_id() == id.to_string())
-                .ok_or(BookmarkAddError::IdNotFound(id.to_string()))?;
-
-            match item {
-                XbelItem::Folder(f) => &mut f.items,
-                _ => return Err(BookmarkAddError::NotaFolder(id.to_string())),
+            
+            if let Under::Id(_id, placement) = &add_args.under {
+                // Find the item (matching id) inside items
+                let (item, item_idx) = items
+                    .iter_mut()
+                    .enumerate()
+                    .find_map(|(idx, i)| { 
+                        if *i.get_id() == id.to_string() { Some((i, idx)) } else { None } 
+                    })
+                    .ok_or(BookmarkAddError::IdNotFound(id.to_string()))?;
+                
+                match placement {
+                    Placement::Before => {
+                        items.insert(item_idx, bookmark);
+                    },
+                    Placement::After => {
+                        items.insert(item_idx.saturating_add(1), bookmark);
+                    },
+                    Placement::InFolderPrepend => {
+                        if let XbelItem::Folder(f) = item {
+                            f.items.insert(0, bookmark)
+                        } else {
+                            return Err(BookmarkAddError::NotaFolder(id.to_string()));
+                        }
+                    },
+                    Placement::InFolderAppend => {
+                        if let XbelItem::Folder(f) = item {
+                            f.items.push(bookmark)
+                        } else {
+                            return Err(BookmarkAddError::NotaFolder(id.to_string()));
+                        }
+                    },
+                }
+                
+            } else {
+                unreachable!()
             }
         }
-        XbelPath::Path(_) => unimplemented!(),
+        XbelPath::Path(s) => {
+            
+            let path_split_last = s
+                .rsplit_once('/')// split from the end
+                .map(|(_rest, s)| s.to_string()) // discard rest and to_string
+                .unwrap_or(s.clone());
+            
+            // Find the item (matching last path) inside items
+            let (item, item_idx) = items
+                .iter_mut()
+                .enumerate()
+                .find_map(|(idx, i)| {
+                    if *i.get_title().text == path_split_last { Some((i, idx)) } else { None }
+                })
+                .ok_or(BookmarkAddError::PathNotFound(s.to_string()))?;
+            
+            if let XbelItem::Folder(f) = item {
+                f.items.push(bookmark)
+            } else {
+                return Err(BookmarkAddError::NotaFolder(item.get_id().to_string()));
+            }
+        },
     };
-    items.push(bookmark);
 
     println!("xbel: {:?}", xbel);
     {

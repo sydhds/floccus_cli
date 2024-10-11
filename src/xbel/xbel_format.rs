@@ -60,7 +60,7 @@ impl XbelItem {
 }
 
 impl XbelItem {
-    fn get_title(&self) -> &Title {
+    pub(crate) fn get_title(&self) -> &Title {
         match self {
             XbelItem::Folder(f) => &f.title,
             XbelItem::Bookmark(b) => &b.title,
@@ -106,7 +106,7 @@ impl Folder {
 pub enum XbelPath {
     Root,
     Id(u64),
-    Path(PathBuf),
+    Path(String),
 }
 
 impl Display for XbelPath {
@@ -114,7 +114,7 @@ impl Display for XbelPath {
         match self {
             XbelPath::Root => write!(f, "root"),
             XbelPath::Id(id) => write!(f, "id = {}", id),
-            XbelPath::Path(p) => write!(f, "path = {}", p.display()),
+            XbelPath::Path(p) => write!(f, "path = {}", p),
         }
     }
 }
@@ -209,8 +209,43 @@ impl Xbel {
 
                 None
             }
-            _ => {
-                unimplemented!()
+            XbelPath::Path(s) => {
+                
+                let mut path_split = s
+                    .split('/')
+                    .collect::<Vec<&str>>(); 
+                // Safe to unwrap()
+                let mut path_split_index = 0;
+                
+                // All the Vec<XbelItem> to check (in order to find the id)
+                let mut to_process = VecDeque::from([&mut self.items]);
+                
+                while let Some(items) = to_process.pop_front() {
+                    let found = items
+                        .iter()
+                        .find(|item| {
+                            item.get_title().text == path_split[path_split_index] 
+                        });
+                    if found.is_some() {
+                        if path_split_index == path_split.len() - 1 {
+                            return Some(items);
+                        } else {
+                            path_split_index += 1;
+                        }
+                    }
+
+                    // Not (all) found yet, update to_process
+                    for item in items.iter_mut() {
+                        match item {
+                            XbelItem::Folder(ref mut f) => {
+                                to_process.push_back(&mut f.items);
+                            }
+                            XbelItem::Bookmark(_) => {}
+                        }
+                    }
+                }
+
+                None
             }
         }
     }
