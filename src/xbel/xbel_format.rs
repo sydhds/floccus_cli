@@ -182,16 +182,13 @@ impl Xbel {
         match path {
             XbelPath::Root => Some(&mut self.items),
             XbelPath::Id(id) => {
-                
                 // All the Vec<XbelItem> to check (in order to find the id)
                 let mut to_process = VecDeque::from([&mut self.items]);
                 while let Some(items) = to_process.pop_front() {
-                    let found = items
-                        .iter()
-                        .find(|item| {
-                            let item_id = item.get_id().parse::<u64>().unwrap();
-                            item_id == *id
-                        });
+                    let found = items.iter().find(|item| {
+                        let item_id = item.get_id().parse::<u64>().unwrap();
+                        item_id == *id
+                    });
                     if found.is_some() {
                         return Some(items);
                     }
@@ -210,22 +207,17 @@ impl Xbel {
                 None
             }
             XbelPath::Path(s) => {
-                
-                let mut path_split = s
-                    .split('/')
-                    .collect::<Vec<&str>>(); 
+                let mut path_split = s.split('/').collect::<Vec<&str>>();
                 // Safe to unwrap()
                 let mut path_split_index = 0;
-                
+
                 // All the Vec<XbelItem> to check (in order to find the id)
                 let mut to_process = VecDeque::from([&mut self.items]);
-                
+
                 while let Some(items) = to_process.pop_front() {
                     let found = items
                         .iter()
-                        .find(|item| {
-                            item.get_title().text == path_split[path_split_index] 
-                        });
+                        .find(|item| item.get_title().text == path_split[path_split_index]);
                     if found.is_some() {
                         if path_split_index == path_split.len() - 1 {
                             return Some(items);
