@@ -150,6 +150,13 @@ pub struct RemoveArgs {
         required = false
     )]
     disable_push: bool,
+    #[arg(
+        long = "dry-run",
+        help = "Do not remove - just print",
+        action,
+        required = false
+    )]
+    dry_run: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -220,12 +227,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             let res = bookmark_add(&add_args, repository_folder, &repo, cli.repository_url);
 
             if let Err(e) = res {
-                // FIXME: should we exit with code 1?
                 eprintln!("Error: {}", e);
+                std::process::exit(1);
             }
         }
-        Commands::Rm(_) => {
-            unimplemented!()
+        Commands::Rm(rm_args) => {
+            let res = bookmark_rm(&rm_args, repository_folder, &repo, cli.repository_url);
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
         }
     };
 
@@ -337,6 +349,7 @@ fn bookmark_add(
         return Err(BookmarkAddError::PushWithoutUrl);
     }
 
+    // Read xbel
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
     let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
@@ -420,6 +433,7 @@ fn bookmark_add(
     {
         let mut f = std::fs::File::options()
             .write(true)
+            .truncate(true)
             .open(bookmark_file_path.as_path())?;
 
         let buffer = xbel.write_to_string();
@@ -466,5 +480,133 @@ fn bookmark_add(
         origin.push(&["refs/heads/main:refs/heads/main"], None)?;
     }
 
+    Ok(())
+}
+
+#[derive(Error, Debug)]
+enum BookmarkRemoveError {
+    #[error("Error: please provide git repository url (or use --disable-push)")]
+    PushWithoutUrl,
+    #[error("Error while reading Xbel file: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Cannot read Xbel file: {0}")]
+    XbelReadError(#[from] quick_xml::de::DeError),
+    #[error("Cannot find anything in Xbel matching: {0}")]
+    XbelPathNotFound(XbelPath),
+    #[error("Cannot find anything in Xbel matching id: {0}")]
+    IdNotFound(String),
+    #[error("Cannot find anything in Xbel matching path: {0}")]
+    PathNotFound(String),
+    // #[error("Item found with id: {0} but it is not a folder")]
+    // NotaFolder(String),
+    // // TODO: remap error GitAddError, GitCommitError ...
+    // #[error(transparent)]
+    // GitError(#[from] git2::Error),
+}
+
+fn bookmark_rm(
+    rm_args: &RemoveArgs,
+    repository_folder: PathBuf,
+    repo: &Repository,
+    repository_url: Option<String>,
+) -> Result<(), BookmarkRemoveError> {
+    
+    if !rm_args.disable_push && repository_url.is_none() {
+        return Err(BookmarkRemoveError::PushWithoutUrl);
+    }
+
+    // TODO: xbel::from_file
+    let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
+    let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
+    let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
+    let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
+    
+    // Find where to put the bookmark
+    let xbel_path = XbelPath::from(&rm_args.under);
+    // TODO: return (items, item_index)
+    let items = xbel
+        .get_items_mut(&xbel_path)
+        .ok_or(BookmarkRemoveError::XbelPathNotFound(xbel_path.clone()))?;
+    
+    match xbel_path {
+        XbelPath::Root => {
+            // TODO: return Error
+            unimplemented!()
+        }
+        XbelPath::Id(id) => {
+            
+            // Find the item (matching id) inside items
+            let (item, item_idx) = items
+                .iter_mut()
+                .enumerate()
+                .find_map(|(idx, i)| {
+                    if *i.get_id() == id.to_string() { Some((i, idx)) } else { None }
+                })
+                .ok_or(BookmarkRemoveError::IdNotFound(id.to_string()))?;
+            
+            if rm_args.dry_run {
+                match item {
+                    XbelItem::Folder(f) => {
+                        // XXX: 
+                        // Folder Debug print folder + all children recursively
+                        // Maybe we could print only the folder + children count ?
+                        println!("[Dry run] removing folder: {:?}", f);
+                    }
+                    XbelItem::Bookmark(b) => {
+                        println!("[Dry run] removing bookmark: {:?}", b);
+                    }
+                }
+            } else {
+                items.remove(item_idx);
+            }
+        }
+        XbelPath::Path(s) => {
+
+            let path_split_last = s
+                .rsplit_once('/')// split from the end
+                .map(|(_rest, s)| s.to_string()) // discard rest and to_string
+                .unwrap_or(s.clone());
+
+            // Find the item (matching last path) inside items
+            let (item, item_idx) = items
+                .iter_mut()
+                .enumerate()
+                .find_map(|(idx, i)| {
+                    if *i.get_title().text == path_split_last { Some((i, idx)) } else { None }
+                })
+                .ok_or(BookmarkRemoveError::PathNotFound(s.to_string()))?;
+
+            if rm_args.dry_run {
+                match item {
+                    XbelItem::Folder(f) => {
+                        // TODO: print all children or just print the children count (recursive)
+                        println!("[Dry run] removing folder: {:?}", f);
+                    }
+                    XbelItem::Bookmark(b) => {
+                        println!("[Dry run] removing bookmark: {:?}", b);
+                    }
+                }
+            } else {
+                // TODO: print
+                items.remove(item_idx);
+            }
+        }
+    }
+    
+    {
+        // TODO: Xbel::to_file
+        let mut f = std::fs::File::options()
+            .write(true)
+            .truncate(true)
+            .open(bookmark_file_path.as_path())?;
+
+        let buffer = xbel.write_to_string();
+        f.write_all(buffer.as_bytes())?;
+    }
+    
+    if !rm_args.disable_push {
+        unimplemented!()
+    }
+    
     Ok(())
 }
