@@ -529,7 +529,7 @@ mod tests {
         assert_eq!(xbel.items[0].get_title().text.as_str(), "admin");
         assert_eq!(xbel.items[0].get_id().as_str(), "1");
 
-        // Check the first item is a Folder of id=2, followed by a Bookmark of id=4
+        // Check the first item is a Folder of id=2, followed by a Bookmark of id=5
         {
             if let XbelItem::Folder(f1) = &xbel.items[0] {
                 if let XbelItem::Folder(f2) = &f1.items[0] {
@@ -538,8 +538,8 @@ mod tests {
                     panic!("Expected a folder (with id 2)");
                 }
 
-                if let XbelItem::Bookmark(b4) = &f1.items[1] {
-                    assert_eq!(b4.id, "4");
+                if let XbelItem::Bookmark(b5) = &f1.items[1] {
+                    assert_eq!(b5.id, "5");
                 } else {
                     panic!("Expected a bookmark (with id 4)")
                 }
