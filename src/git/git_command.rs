@@ -209,3 +209,46 @@ pub fn git_merge<'a>(
     }
     Ok(())
 }
+
+pub fn git_push(repo: &Repository, file_to_add: &Path) -> Result<(), git2::Error> {
+    // Configured author signature
+    let author = repo.signature()?;
+
+    // git add
+    let status = repo.status_file(file_to_add)?;
+    println!("status: {:?}", status);
+    let mut index = repo.index()?;
+
+    index.add_path(file_to_add)?;
+    // the modified in-memory index need to flush back to disk
+    index.write()?;
+
+    // git commit
+
+    // returns the object id you can use to look up the actual tree object
+    let new_tree_oid = index.write_tree()?;
+    // this is our new tree, i.e. the root directory of the new commit
+    let new_tree = repo.find_tree(new_tree_oid)?;
+
+    // for simple commit, use current head as parent
+    // TODO: test
+    // you need more than one parent if the commit is a merge
+    let head = repo.head()?;
+    // FIXME: unwrap
+    let parent = repo.find_commit(head.target().unwrap())?;
+
+    let _commit_oid = repo.commit(
+        Some("HEAD"),
+        &author,
+        &author,
+        "Floccus bookmarks update",
+        &new_tree,
+        &[&parent],
+    )?;
+
+    // git push
+    let mut origin = repo.find_remote("origin")?;
+    origin.push(&["refs/heads/main:refs/heads/main"], None)?;
+
+    Ok(())
+}
