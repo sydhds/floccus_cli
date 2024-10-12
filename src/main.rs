@@ -3,7 +3,10 @@ mod xbel;
 
 // std
 use std::error::Error;
-use std::io::{BufReader, Write};
+use std::io::{
+    BufReader,
+    // Write
+};
 use std::path::PathBuf;
 use std::str::FromStr;
 // third-party
@@ -13,8 +16,8 @@ use git2::Repository;
 use quick_xml::de::from_reader;
 use thiserror::Error;
 // internal
-use crate::git::{git_clone, git_fetch, git_merge};
-use crate::xbel::{Xbel, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
+use crate::git::{git_clone, git_fetch, git_merge, git_push};
+use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "clap-subcommand")]
@@ -83,6 +86,20 @@ impl FromStr for Under {
         match s {
             "root" => Ok(Under::Root),
             _ => {
+                let (rem, placement) =
+                    if let Some(stripped) = s.strip_prefix(PLACEMENT_AFTER_PREFIX) {
+                        (stripped, Placement::After)
+                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_BEFORE_PREFIX) {
+                        (stripped, Placement::Before)
+                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_APPEND_PREFIX) {
+                        (stripped, Placement::InFolderAppend)
+                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_PREPEND_PREFIX) {
+                        (stripped, Placement::InFolderPrepend)
+                    } else {
+                        (s, Placement::InFolderAppend)
+                    };
+
+                /*
                 let (rem, placement) = if s.starts_with(PLACEMENT_AFTER_PREFIX) {
                     (&s[PLACEMENT_AFTER_PREFIX.len()..], Placement::After)
                 } else if s.starts_with(PLACEMENT_BEFORE_PREFIX) {
@@ -100,6 +117,7 @@ impl FromStr for Under {
                 } else {
                     (s, Placement::InFolderAppend)
                 };
+                */
 
                 if let Ok(s_id) = rem.parse::<u64>() {
                     Ok(Under::Id(s_id, placement))
@@ -326,16 +344,18 @@ fn print_xbel_item(item: &XbelItem, indent_spaces: usize) {
 enum BookmarkAddError {
     #[error("Error: please provide git repository url (or use --disable-push)")]
     PushWithoutUrl,
-    #[error("Error while reading Xbel file: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("Cannot read Xbel file: {0}")]
-    XbelReadError(#[from] quick_xml::de::DeError),
+    // #[error("Error while reading Xbel file: {0}")]
+    // IoError(#[from] std::io::Error),
+    // #[error("Cannot read Xbel file: {0}")]
+    // XbelReadError(#[from] quick_xml::de::DeError),
+    #[error(transparent)]
+    XbelReadError(#[from] XbelError),
     #[error("Cannot find anything in Xbel matching: {0}")]
     XbelPathNotFound(XbelPath),
-    #[error("Cannot find anything in Xbel matching id: {0}")]
-    IdNotFound(String),
-    #[error("Cannot find anything in Xbel matching path: {0}")]
-    PathNotFound(String),
+    // #[error("Cannot find anything in Xbel matching id: {0}")]
+    // IdNotFound(String),
+    // #[error("Cannot find anything in Xbel matching path: {0}")]
+    // PathNotFound(String),
     #[error("Item found with id: {0} but it is not a folder")]
     NotaFolder(String),
     // TODO: remap error GitAddError, GitCommitError ...
@@ -356,15 +376,16 @@ fn bookmark_add(
     // Read xbel
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
-    let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
-    let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
+    let mut xbel = Xbel::from_file(&bookmark_file_path)?;
+    // let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
+    // let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
 
     // Build the bookmark
     let bookmark = xbel.new_bookmark(add_args.url.as_str(), add_args.title.as_str());
 
     // Find where to put the bookmark
     let xbel_path = XbelPath::from(&add_args.under);
-    let items = xbel
+    let (item_index, items) = xbel
         .get_items_mut(&xbel_path)
         .ok_or(BookmarkAddError::XbelPathNotFound(xbel_path.clone()))?;
 
@@ -373,34 +394,34 @@ fn bookmark_add(
         XbelPath::Id(id) => {
             if let Under::Id(_id, placement) = &add_args.under {
                 // Find the item (matching id) inside items
-                let (item, item_idx) = items
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(idx, i)| {
-                        if *i.get_id() == id.to_string() {
-                            Some((i, idx))
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or(BookmarkAddError::IdNotFound(id.to_string()))?;
+                // let (item, item_idx) = items
+                //     .iter_mut()
+                //     .enumerate()
+                //     .find_map(|(idx, i)| {
+                //         if *i.get_id() == id.to_string() {
+                //             Some((i, idx))
+                //         } else {
+                //             None
+                //         }
+                //     })
+                //     .ok_or(BookmarkAddError::IdNotFound(id.to_string()))?;
 
                 match placement {
                     Placement::Before => {
-                        items.insert(item_idx, bookmark);
+                        items.insert(item_index, bookmark);
                     }
                     Placement::After => {
-                        items.insert(item_idx.saturating_add(1), bookmark);
+                        items.insert(item_index.saturating_add(1), bookmark);
                     }
                     Placement::InFolderPrepend => {
-                        if let XbelItem::Folder(f) = item {
+                        if let XbelItem::Folder(f) = &mut items[item_index] {
                             f.items.insert(0, bookmark)
                         } else {
                             return Err(BookmarkAddError::NotaFolder(id.to_string()));
                         }
                     }
                     Placement::InFolderAppend => {
-                        if let XbelItem::Folder(f) = item {
+                        if let XbelItem::Folder(f) = &mut items[item_index] {
                             f.items.push(bookmark)
                         } else {
                             return Err(BookmarkAddError::NotaFolder(id.to_string()));
@@ -411,34 +432,37 @@ fn bookmark_add(
                 unreachable!()
             }
         }
-        XbelPath::Path(s) => {
-            let path_split_last = s
-                .rsplit_once('/') // split from the end
-                .map(|(_rest, s)| s.to_string()) // discard rest and to_string
-                .unwrap_or(s.clone());
+        XbelPath::Path(_s) => {
+            // let path_split_last = s
+            //     .rsplit_once('/') // split from the end
+            //     .map(|(_rest, s)| s.to_string()) // discard rest and to_string
+            //     .unwrap_or(s.clone());
 
-            // Find the item (matching last path) inside items
-            let (item, item_idx) = items
-                .iter_mut()
-                .enumerate()
-                .find_map(|(idx, i)| {
-                    if *i.get_title().text == path_split_last {
-                        Some((i, idx))
-                    } else {
-                        None
-                    }
-                })
-                .ok_or(BookmarkAddError::PathNotFound(s.to_string()))?;
+            // // Find the item (matching last path) inside items
+            // let (item, item_idx) = items
+            //     .iter_mut()
+            //     .enumerate()
+            //     .find_map(|(idx, i)| {
+            //         if *i.get_title().text == path_split_last {
+            //             Some((i, idx))
+            //         } else {
+            //             None
+            //         }
+            //     })
+            //     .ok_or(BookmarkAddError::PathNotFound(s.to_string()))?;
 
-            if let XbelItem::Folder(f) = item {
+            if let XbelItem::Folder(f) = &mut items[item_index] {
                 f.items.push(bookmark)
             } else {
-                return Err(BookmarkAddError::NotaFolder(item.get_id().to_string()));
+                return Err(BookmarkAddError::NotaFolder(
+                    items[item_index].get_id().to_string(),
+                ));
             }
         }
     };
 
     println!("xbel: {:?}", xbel);
+    /*
     {
         let mut f = std::fs::File::options()
             .write(true)
@@ -448,8 +472,13 @@ fn bookmark_add(
         let buffer = xbel.write_to_string();
         f.write_all(buffer.as_bytes())?;
     }
+    */
+
+    // Write to file locally
+    xbel.to_file(bookmark_file_path)?;
 
     if !add_args.disable_push {
+        /*
         // Configured author signature
         let author = repo.signature()?;
 
@@ -487,6 +516,9 @@ fn bookmark_add(
         // git push
         let mut origin = repo.find_remote("origin")?;
         origin.push(&["refs/heads/main:refs/heads/main"], None)?;
+        */
+
+        git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
     Ok(())
@@ -496,21 +528,23 @@ fn bookmark_add(
 enum BookmarkRemoveError {
     #[error("Error: please provide git repository url (or use --disable-push)")]
     PushWithoutUrl,
-    #[error("Error while reading Xbel file: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("Cannot read Xbel file: {0}")]
-    XbelReadError(#[from] quick_xml::de::DeError),
+    // #[error("Error while reading Xbel file: {0}")]
+    // IoError(#[from] std::io::Error),
+    // #[error("Cannot read Xbel file: {0}")]
+    // XbelReadError(#[from] quick_xml::de::DeError),
+    #[error(transparent)]
+    XbelReadError(#[from] XbelError),
     #[error("Cannot find anything in Xbel matching: {0}")]
     XbelPathNotFound(XbelPath),
-    #[error("Cannot find anything in Xbel matching id: {0}")]
-    IdNotFound(String),
-    #[error("Cannot find anything in Xbel matching path: {0}")]
-    PathNotFound(String),
+    // #[error("Cannot find anything in Xbel matching id: {0}")]
+    // IdNotFound(String),
+    // #[error("Cannot find anything in Xbel matching path: {0}")]
+    // PathNotFound(String),
     // #[error("Item found with id: {0} but it is not a folder")]
     // NotaFolder(String),
     // // TODO: remap error GitAddError, GitCommitError ...
-    // #[error(transparent)]
-    // GitError(#[from] git2::Error),
+    #[error(transparent)]
+    GitError(#[from] git2::Error),
 }
 
 fn bookmark_rm(
@@ -523,16 +557,14 @@ fn bookmark_rm(
         return Err(BookmarkRemoveError::PushWithoutUrl);
     }
 
-    // TODO: xbel::from_file
+    // Read xbel file
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
-    let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
-    let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
+    let mut xbel = Xbel::from_file(&bookmark_file_path)?;
 
     // Find where to put the bookmark
     let xbel_path = XbelPath::from(&rm_args.under);
-    // TODO: return (items, item_index)
-    let items = xbel
+    let (item_index, items) = xbel
         .get_items_mut(&xbel_path)
         .ok_or(BookmarkRemoveError::XbelPathNotFound(xbel_path.clone()))?;
 
@@ -541,22 +573,22 @@ fn bookmark_rm(
             // TODO: return Error
             unimplemented!()
         }
-        XbelPath::Id(id) => {
+        XbelPath::Id(_id) => {
             // Find the item (matching id) inside items
-            let (item, item_idx) = items
-                .iter_mut()
-                .enumerate()
-                .find_map(|(idx, i)| {
-                    if *i.get_id() == id.to_string() {
-                        Some((i, idx))
-                    } else {
-                        None
-                    }
-                })
-                .ok_or(BookmarkRemoveError::IdNotFound(id.to_string()))?;
+            // let (item, item_idx) = items
+            //     .iter_mut()
+            //     .enumerate()
+            //     .find_map(|(idx, i)| {
+            //         if *i.get_id() == id.to_string() {
+            //             Some((i, idx))
+            //         } else {
+            //             None
+            //         }
+            //     })
+            //     .ok_or(BookmarkRemoveError::IdNotFound(id.to_string()))?;
 
             if rm_args.dry_run {
-                match item {
+                match &items[item_index] {
                     XbelItem::Folder(f) => {
                         // XXX:
                         // Folder Debug print folder + all children recursively
@@ -568,30 +600,30 @@ fn bookmark_rm(
                     }
                 }
             } else {
-                items.remove(item_idx);
+                items.remove(item_index);
             }
         }
-        XbelPath::Path(s) => {
-            let path_split_last = s
-                .rsplit_once('/') // split from the end
-                .map(|(_rest, s)| s.to_string()) // discard rest and to_string
-                .unwrap_or(s.clone());
+        XbelPath::Path(_s) => {
+            // let path_split_last = s
+            //     .rsplit_once('/') // split from the end
+            //     .map(|(_rest, s)| s.to_string()) // discard rest and to_string
+            //     .unwrap_or(s.clone());
 
-            // Find the item (matching last path) inside items
-            let (item, item_idx) = items
-                .iter_mut()
-                .enumerate()
-                .find_map(|(idx, i)| {
-                    if *i.get_title().text == path_split_last {
-                        Some((i, idx))
-                    } else {
-                        None
-                    }
-                })
-                .ok_or(BookmarkRemoveError::PathNotFound(s.to_string()))?;
+            // // Find the item (matching last path) inside items
+            // let (item, item_idx) = items
+            //     .iter_mut()
+            //     .enumerate()
+            //     .find_map(|(idx, i)| {
+            //         if *i.get_title().text == path_split_last {
+            //             Some((i, idx))
+            //         } else {
+            //             None
+            //         }
+            //     })
+            //     .ok_or(BookmarkRemoveError::PathNotFound(s.to_string()))?;
 
             if rm_args.dry_run {
-                match item {
+                match &items[item_index] {
                     XbelItem::Folder(f) => {
                         // TODO: print all children or just print the children count (recursive)
                         println!("[Dry run] removing folder: {:?}", f);
@@ -602,24 +634,29 @@ fn bookmark_rm(
                 }
             } else {
                 // TODO: print
-                items.remove(item_idx);
+                items.remove(item_index);
             }
         }
     }
 
+    /*
     {
         // TODO: Xbel::to_file
-        let mut f = std::fs::File::options()
-            .write(true)
-            .truncate(true)
-            .open(bookmark_file_path.as_path())?;
+        // let mut f = std::fs::File::options()
+        //     .write(true)
+        //     .truncate(true)
+        //     .open(bookmark_file_path.as_path())?;
 
-        let buffer = xbel.write_to_string();
-        f.write_all(buffer.as_bytes())?;
+        // let buffer = xbel.write_to_string();
+        // f.write_all(buffer.as_bytes())?;
     }
+    */
+
+    // Write to file locally
+    xbel.to_file(bookmark_file_path)?;
 
     if !rm_args.disable_push {
-        unimplemented!()
+        git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
     Ok(())
