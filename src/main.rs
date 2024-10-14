@@ -2,10 +2,10 @@ mod git;
 mod xbel;
 
 // std
+use std::borrow::Cow;
 use std::error::Error;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::borrow::Cow;
 // third-party
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
