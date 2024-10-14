@@ -5,6 +5,7 @@ mod xbel;
 use std::error::Error;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::borrow::Cow;
 // third-party
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
@@ -559,15 +560,45 @@ fn bookmark_find(
         })
         .collect();
 
-    // TODO: customize message
     if items.is_empty() {
-        println!("Found 0 bookmark or folder");
+        let msg = match find_kind {
+            FindKind::All => "Found 0 bookmark or folder",
+            FindKind::Folder => "Found 0 folder",
+            FindKind::Bookmark => "Found 0 bookmark",
+        };
+        println!("{}", msg);
     } else {
-        println!("Found {} bookmark or folder:", items.len());
+        let msg = match find_kind {
+            FindKind::All => format!(
+                "Found {} {} or {}:",
+                items.len(),
+                pluralize("folder", items.len()),
+                pluralize("bookmark", items.len()),
+            ),
+            FindKind::Folder => format!(
+                "Found {} {}:",
+                items.len(),
+                pluralize("folder", items.len())
+            ),
+            FindKind::Bookmark => format!(
+                "Found {} {}:",
+                items.len(),
+                pluralize("bookmark", items.len())
+            ),
+        };
+
+        println!("{}", msg);
         for (idx, i) in items.iter().enumerate() {
-            println!("[{}]: {:?}", idx, i);
+            println!("{}- {:?}", idx, i);
         }
     }
 
     Ok(())
+}
+
+fn pluralize(s: &str, count: usize) -> Cow<'_, str> {
+    match count {
+        0 | 1 => Cow::Borrowed(s),
+        _ => Cow::Owned(format!("{}s", s)),
+    }
 }
