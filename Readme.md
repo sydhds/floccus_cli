@@ -22,25 +22,39 @@ A Rust-written cli tool for [Floccus](www.floccus.org)
 * cargo build
 * ./target/debug/floccus_cli --help
 
-Print bookmarks:
+### Print bookmarks
 
 * Init floccus_cli:
 * ./target/debug/floccus_cli -r https://github.com/your_username/your_repo.git print
 * After:
 * ./target/debug/floccus-cli print
 
-Add a new bookmark (EXPERIMENTAL, Default: append to root):
-* ./target/debug/floccus-cli add -b https://example.com -t "Example www site" --disable-push
+### Add a new bookmark (EXPERIMENTAL, Default: append to root)
 
+* ./target/debug/floccus-cli add -b https://example.com -t "Example www site" --disable-push
 
 * Add a bookmark after a given id (folder or bookmark)
   * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u after=3 --disable-push
 * Add a bookmark in a given folder id (append)
-    * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u 2 --disable-push
-    * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u append=2 --disable-push
+  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u 2 --disable-push
+  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u append=2 --disable-push
 * Add a bookmark in a given folder id (prepend)
-    * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u prepend=2 --disable-push
+  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u prepend=2 --disable-push
 
 Note: 
 * Pushing (git push) by floccus-cli is experimental - for now use --disable-push && push manually
 
+### Remove a bookmark / folder (EXPERIMENTAL)
+
+* Remove a bookmark using a given id
+  * ./target/debug/floccus-cli rm -i 14 --disable-push
+
+Note:
+* Pushing (git push) by floccus-cli is experimental - for now use --disable-push && push manually
+
+### Find a bookmark or folder
+
+* Find a bookmark
+  * ./target/debug/floccus-cli find "FOO"
+  * ./target/debug/floccus-cli find --bookmark "FOO"
+  * ./target/debug/floccus-cli find --bookmark --title "FOO"
