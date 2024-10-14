@@ -49,6 +49,8 @@ pub(crate) enum Commands {
     Add(AddArgs),
     #[command(about = "Remove bookmark(s)")]
     Rm(RemoveArgs),
+    #[command(about = "Find bookmark(s)")]
+    Find(FindArgs),
 }
 
 #[derive(Debug, Clone, PartialEq, Args)]
@@ -156,6 +158,44 @@ pub struct RemoveArgs {
     dry_run: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Args)]
+pub struct FindArgs {
+    #[arg(
+        short = 't',
+        long = "title",
+        help = "Only search in folder or bookmark titles (Default: search on url & titles)",
+        action,
+        required = false
+    )]
+    title: bool,
+    #[arg(
+        short = 'u',
+        long = "url",
+        help = "Only search in folder or bookmark url (Default: search on url & titles)",
+        action,
+        required = false
+    )]
+    url: bool,
+    #[arg(
+        short = 'f',
+        long = "folder",
+        help = "Perform search only for folders",
+        action,
+        required = false
+    )]
+    folder: bool,
+    #[arg(
+        short = 'b',
+        long = "bookmark",
+        help = "Perform search only for bookmarks",
+        action,
+        required = false
+    )]
+    bookmark: bool,
+    /// What to find
+    find: String,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     println!("cli: {:?}", cli);
@@ -217,6 +257,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Rm(rm_args) => {
             let res = bookmark_rm(&rm_args, repository_folder, &repo, cli.repository_url);
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Find(find_args) => {
+            let res = bookmark_find(&find_args, repository_folder);
 
             if let Err(e) = res {
                 eprintln!("Error: {}", e);
@@ -435,6 +483,90 @@ fn bookmark_rm(
 
     if !rm_args.disable_push {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
+    }
+
+    Ok(())
+}
+
+#[derive(Error, Debug)]
+enum BookmarkFindError {
+    #[error(transparent)]
+    XbelReadError(#[from] XbelError),
+}
+
+enum FindKind {
+    All,
+    Folder,
+    Bookmark,
+}
+
+enum FindWhere {
+    All,
+    Title,
+    Url,
+}
+
+fn bookmark_find(
+    find_args: &FindArgs,
+    repository_folder: PathBuf,
+) -> Result<(), BookmarkFindError> {
+    let find_kind = if find_args.folder {
+        FindKind::Folder
+    } else if find_args.bookmark {
+        FindKind::Bookmark
+    } else {
+        FindKind::All
+    };
+
+    let find_where = if find_args.title {
+        FindWhere::Title
+    } else if find_args.url {
+        FindWhere::Url
+    } else {
+        FindWhere::All
+    };
+
+    // Read xbel file
+    let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
+    let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
+    let xbel = Xbel::from_file(&bookmark_file_path)?;
+
+    let found_in_title = |item: &XbelItem, to_match: &str| item.get_title().text.contains(to_match);
+    let found_in_url = |item: &XbelItem, to_match: &str| {
+        item.get_url().unwrap_or(&"".to_string()).contains(to_match)
+    };
+    let items: Vec<&XbelItem> = xbel
+        .into_iter()
+        .filter(|i| {
+            let match_kind = match find_kind {
+                FindKind::Folder => matches!(i, XbelItem::Folder(_)),
+                FindKind::Bookmark => matches!(i, XbelItem::Bookmark(_)),
+                FindKind::All => true,
+            };
+
+            if !match_kind {
+                false
+            } else {
+                match find_where {
+                    FindWhere::Title => found_in_title(i, find_args.find.as_str()),
+                    FindWhere::Url => found_in_url(i, find_args.find.as_str()),
+                    FindWhere::All => {
+                        let to_find = find_args.find.as_str();
+                        found_in_title(i, to_find) || found_in_url(i, to_find)
+                    }
+                }
+            }
+        })
+        .collect();
+
+    // TODO: customize message
+    if items.is_empty() {
+        println!("Found 0 bookmark or folder");
+    } else {
+        println!("Found {} bookmark or folder:", items.len());
+        for (idx, i) in items.iter().enumerate() {
+            println!("[{}]: {:?}", idx, i);
+        }
     }
 
     Ok(())

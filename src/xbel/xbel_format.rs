@@ -71,6 +71,12 @@ impl XbelItem {
             XbelItem::Bookmark(b) => &b.id,
         }
     }
+    pub(crate) fn get_url(&self) -> Option<&String> {
+        match self {
+            XbelItem::Folder(_f) => None,
+            XbelItem::Bookmark(b) => Some(&b.href),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
