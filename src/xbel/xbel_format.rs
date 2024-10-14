@@ -1,18 +1,11 @@
 use quick_xml::de::from_reader;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::writer::Writer;
-use serde::{
-    Deserialize,
-    Serialize,
-    //Serializer
-};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Write};
-use std::path::{
-    Path,
-    // PathBuf
-};
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -78,14 +71,6 @@ impl XbelItem {
             XbelItem::Bookmark(b) => &b.id,
         }
     }
-    /*
-    fn has_items(&self) -> bool {
-        match self {
-            XbelItem::Folder(f) => !f.items.is_empty(),
-            XbelItem::Bookmark(_b) => false,
-        }
-    }
-    */
 }
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -139,7 +124,6 @@ impl Xbel {
     fn new(items: Option<Vec<XbelItem>>) -> Self {
         Self {
             version: "1.0".to_string(),
-            // highest_id: XbelHighestId(0),
             items: items.unwrap_or_default(),
         }
     }
