@@ -1,13 +1,12 @@
+use quick_xml::de::from_reader;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::writer::Writer;
-use serde::{
-    Deserialize,
-    Serialize,
-    //Serializer
-};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
+use std::io::{BufReader, Write};
+use std::path::Path;
+use thiserror::Error;
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
@@ -72,14 +71,6 @@ impl XbelItem {
             XbelItem::Bookmark(b) => &b.id,
         }
     }
-    /*
-    fn has_items(&self) -> bool {
-        match self {
-            XbelItem::Folder(f) => !f.items.is_empty(),
-            XbelItem::Bookmark(_b) => false,
-        }
-    }
-    */
 }
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
@@ -133,7 +124,6 @@ impl Xbel {
     fn new(items: Option<Vec<XbelItem>>) -> Self {
         Self {
             version: "1.0".to_string(),
-            // highest_id: XbelHighestId(0),
             items: items.unwrap_or_default(),
         }
     }
@@ -178,22 +168,23 @@ impl Xbel {
         })
     }
 
-    pub(crate) fn get_items_mut(&mut self, path: &XbelPath) -> Option<&mut Vec<XbelItem>> {
+    pub(crate) fn get_items_mut(&mut self, path: &XbelPath) -> Option<(usize, &mut Vec<XbelItem>)> {
         match path {
-            XbelPath::Root => Some(&mut self.items),
+            XbelPath::Root => Some((0, &mut self.items)),
             XbelPath::Id(id) => {
-                
                 // All the Vec<XbelItem> to check (in order to find the id)
                 let mut to_process = VecDeque::from([&mut self.items]);
                 while let Some(items) = to_process.pop_front() {
-                    let found = items
-                        .iter()
-                        .find(|item| {
-                            let item_id = item.get_id().parse::<u64>().unwrap();
-                            item_id == *id
-                        });
-                    if found.is_some() {
-                        return Some(items);
+                    let found = items.iter().enumerate().find_map(|(item_index, item)| {
+                        let item_id = item.get_id().parse::<u64>().unwrap();
+                        if item_id == *id {
+                            Some(item_index)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(item_index) = found {
+                        return Some((item_index, items));
                     }
 
                     // If not found yet, update to_process
@@ -210,25 +201,24 @@ impl Xbel {
                 None
             }
             XbelPath::Path(s) => {
-                
-                let mut path_split = s
-                    .split('/')
-                    .collect::<Vec<&str>>(); 
+                let path_split = s.split('/').collect::<Vec<&str>>();
                 // Safe to unwrap()
                 let mut path_split_index = 0;
-                
+
                 // All the Vec<XbelItem> to check (in order to find the id)
                 let mut to_process = VecDeque::from([&mut self.items]);
-                
+
                 while let Some(items) = to_process.pop_front() {
-                    let found = items
-                        .iter()
-                        .find(|item| {
-                            item.get_title().text == path_split[path_split_index] 
-                        });
-                    if found.is_some() {
+                    let found = items.iter().enumerate().find_map(|(item_index, item)| {
+                        if item.get_title().text == path_split[path_split_index] {
+                            Some(item_index)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(item_index) = found {
                         if path_split_index == path_split.len() - 1 {
-                            return Some(items);
+                            return Some((item_index, items));
                         } else {
                             path_split_index += 1;
                         }
@@ -295,6 +285,30 @@ impl Xbel {
 
         XbelItem::new_bookmark((highest_id + 1).to_string().as_str(), url, title)
     }
+
+    pub fn from_file<T: AsRef<Path>>(path: T) -> Result<Xbel, XbelError> {
+        let xbel_ = std::fs::File::open(path)?;
+        let xbel: Xbel = from_reader(BufReader::new(xbel_))?;
+        Ok(xbel)
+    }
+
+    pub fn to_file<T: AsRef<Path>>(&self, file_path: T) -> Result<(), XbelError> {
+        let mut f = std::fs::File::options()
+            .write(true)
+            .truncate(true)
+            .open(file_path)?;
+        let buffer = self.write_to_string();
+        f.write_all(buffer.as_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum XbelError {
+    #[error("Error while reading Xbel file: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Cannot read Xbel file: {0}")]
+    XbelReadError(#[from] quick_xml::de::DeError),
 }
 
 fn write_xbel_item<W: std::io::Write>(writer: &mut Writer<W>, item: &XbelItem) {
@@ -437,7 +451,6 @@ impl<'a> Iterator for XbelNestingIterator<'a> {
 mod tests {
     use super::*;
     use quick_xml::de::from_str;
-    use quick_xml::Writer;
 
     const XBEL_EMPTY: &str = r#"
             <?xml version="1.0" encoding="UTF-8"?>
@@ -529,7 +542,7 @@ mod tests {
         assert_eq!(xbel.items[0].get_title().text.as_str(), "admin");
         assert_eq!(xbel.items[0].get_id().as_str(), "1");
 
-        // Check the first item is a Folder of id=2, followed by a Bookmark of id=4
+        // Check the first item is a Folder of id=2, followed by a Bookmark of id=5
         {
             if let XbelItem::Folder(f1) = &xbel.items[0] {
                 if let XbelItem::Folder(f2) = &f1.items[0] {
@@ -538,8 +551,8 @@ mod tests {
                     panic!("Expected a folder (with id 2)");
                 }
 
-                if let XbelItem::Bookmark(b4) = &f1.items[1] {
-                    assert_eq!(b4.id, "4");
+                if let XbelItem::Bookmark(b5) = &f1.items[1] {
+                    assert_eq!(b5.id, "5");
                 } else {
                     panic!("Expected a bookmark (with id 4)")
                 }
@@ -659,7 +672,8 @@ mod tests {
         let bookmark_id = (xbel.get_highest_id() + 1).to_string();
         let items_0 = xbel.get_items_mut(&XbelPath::Id(1));
         assert!(items_0.is_none());
-        let items = xbel.get_items_mut(&XbelPath::Root).unwrap();
+        let (item_index, items) = xbel.get_items_mut(&XbelPath::Root).unwrap();
+        assert_eq!(item_index, 0);
         println!("items: {:?}", items);
         let bookmark = Bookmark::new(
             bookmark_id.as_str(),
@@ -675,15 +689,11 @@ mod tests {
     fn add_xbel_1() -> Result<(), quick_xml::errors::serialize::DeError> {
         let mut xbel: Xbel = from_str(XBEL_BANK)?;
         println!("xbel: {:?}", xbel);
-        let bookmark_id = (xbel.get_highest_id() + 1).to_string();
-        let items = xbel.get_items_mut(&XbelPath::Id(4)).unwrap();
+        let bookmark = xbel.new_bookmark("https://www.example_bank.com", "Example bank");
+        let (item_index, items) = xbel.get_items_mut(&XbelPath::Id(4)).unwrap();
         println!("items: {:?}", items);
-        let bookmark = Bookmark::new(
-            bookmark_id.as_str(),
-            "https://www.example_bank.com",
-            "Example bank",
-        );
-        items.push(XbelItem::Bookmark(bookmark));
+        assert_eq!(item_index, 1); // bookmark id == 4 has index == 1 in folder "bank"
+        items.push(bookmark);
         println!("xbel: {:?}", xbel);
         Ok(())
     }

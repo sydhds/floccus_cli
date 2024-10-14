@@ -10,10 +10,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  
+  sanity:
     runs-on: ubuntu-latest
-
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cargo fmt
+        run: cargo fmt --all --check
+      - name: Cargo clippy
+        run: cargo clippy --no-deps --all-targets
+  
+  build:
+    needs: sanity
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Build

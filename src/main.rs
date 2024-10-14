@@ -3,18 +3,16 @@ mod xbel;
 
 // std
 use std::error::Error;
-use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 // third-party
 use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
 use git2::Repository;
-use quick_xml::de::from_reader;
 use thiserror::Error;
 // internal
-use crate::git::{git_clone, git_fetch, git_merge};
-use crate::xbel::{Xbel, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
+use crate::git::{git_clone, git_fetch, git_merge, git_push};
+use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "clap-subcommand")]
@@ -75,7 +73,6 @@ impl FromStr for Under {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-
         const PLACEMENT_AFTER_PREFIX: &str = "after=";
         const PLACEMENT_BEFORE_PREFIX: &str = "before=";
         const PLACEMENT_APPEND_PREFIX: &str = "append=";
@@ -84,18 +81,18 @@ impl FromStr for Under {
         match s {
             "root" => Ok(Under::Root),
             _ => {
-
-                let (rem, placement) = if s.starts_with(PLACEMENT_AFTER_PREFIX) {
-                    (&s[PLACEMENT_AFTER_PREFIX.len()..], Placement::After)
-                } else if s.starts_with(PLACEMENT_BEFORE_PREFIX) {
-                    (&s[PLACEMENT_BEFORE_PREFIX.len()..], Placement::Before)
-                } else if s.starts_with(PLACEMENT_APPEND_PREFIX) {
-                    (&s[PLACEMENT_APPEND_PREFIX.len()..], Placement::InFolderAppend)
-                } else if s.starts_with(PLACEMENT_PREPEND_PREFIX) {
-                    (&s[PLACEMENT_PREPEND_PREFIX.len()..], Placement::InFolderPrepend)
-                } else {
-                    (s, Placement::InFolderAppend)
-                };
+                let (rem, placement) =
+                    if let Some(stripped) = s.strip_prefix(PLACEMENT_AFTER_PREFIX) {
+                        (stripped, Placement::After)
+                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_BEFORE_PREFIX) {
+                        (stripped, Placement::Before)
+                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_APPEND_PREFIX) {
+                        (stripped, Placement::InFolderAppend)
+                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_PREPEND_PREFIX) {
+                        (stripped, Placement::InFolderPrepend)
+                    } else {
+                        (s, Placement::InFolderAppend)
+                    };
 
                 if let Ok(s_id) = rem.parse::<u64>() {
                     Ok(Under::Id(s_id, placement))
@@ -150,6 +147,13 @@ pub struct RemoveArgs {
         required = false
     )]
     disable_push: bool,
+    #[arg(
+        long = "dry-run",
+        help = "Do not remove - just print",
+        action,
+        required = false
+    )]
+    dry_run: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -178,20 +182,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let repository_url = cli.repository_url.as_ref().unwrap();
 
         let repo = git_clone(repository_url.as_str(), repository_folder.as_path())?;
-        repository_need_pull = true;
-
-        /*
-        let head = &repo.head()?;
-        // Get the commit associated with the HEAD reference
-        // FIXME: unwrap
-        let commit = &repo.find_commit(head.target().unwrap())?;
-        println!(
-            "Cloned repository at commit: {:?}: {:?}",
-            commit,
-            commit.message()
-        );
-        */
-
+        repository_need_pull = false;
         repo
     } else {
         Repository::open(repository_folder.as_path())?
@@ -220,12 +211,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             let res = bookmark_add(&add_args, repository_folder, &repo, cli.repository_url);
 
             if let Err(e) = res {
-                // FIXME: should we exit with code 1?
                 eprintln!("Error: {}", e);
+                std::process::exit(1);
             }
         }
-        Commands::Rm(_) => {
-            unimplemented!()
+        Commands::Rm(rm_args) => {
+            let res = bookmark_rm(&rm_args, repository_folder, &repo, cli.repository_url);
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
         }
     };
 
@@ -242,16 +238,7 @@ fn bookmark_print(
     const INDENTER: fn(usize) -> String = |indent_spaces| " ".repeat(indent_spaces);
 
     let bookmark_file_path = repository_folder.join("bookmarks.xbel");
-    let xbel_ = std::fs::File::open(bookmark_file_path)?;
-    let xbel: Xbel = from_reader(BufReader::new(xbel_))?;
-
-    // TODO: use iterator here?
-    /*
-    let indent_spaces = 0;
-    for item in xbel.items.iter() {
-        print_xbel_item(item, indent_spaces);
-    }
-    */
+    let xbel = Xbel::from_file(bookmark_file_path)?;
 
     let it = XbelNestingIterator::new(&xbel);
     let mut indent_spaces = 0;
@@ -278,48 +265,14 @@ fn bookmark_print(
     Ok(())
 }
 
-/*
-fn print_xbel_item(item: &XbelItem, indent_spaces: usize) {
-    const FOLDER_EMOTICON: &str = "\u{1F4C1}";
-    const _FOLDER_LINK: &str = "\u{1F310}";
-    const FOLDER_LINK1: &str = "\u{1F517}";
-    const INDENTER: fn(usize) -> String = |indent_spaces| " ".repeat(indent_spaces);
-
-    match item {
-        XbelItem::Folder(f) => {
-            println!(
-                "{}[{FOLDER_EMOTICON} {}] {}",
-                INDENTER(indent_spaces),
-                f.id,
-                f.title.text
-            );
-            for item in f.items.iter() {
-                print_xbel_item(item, indent_spaces + 2)
-            }
-        }
-        XbelItem::Bookmark(b) => {
-            let indent = INDENTER(indent_spaces + 2);
-            println!("{}[{FOLDER_LINK1} {}] {}", indent, b.id, b.title.text);
-            println!("{}- {}", indent, b.href);
-        }
-    }
-}
-*/
-
 #[derive(Error, Debug)]
 enum BookmarkAddError {
     #[error("Error: please provide git repository url (or use --disable-push)")]
     PushWithoutUrl,
-    #[error("Error while reading Xbel file: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("Cannot read Xbel file: {0}")]
-    XbelReadError(#[from] quick_xml::de::DeError),
+    #[error(transparent)]
+    XbelReadError(#[from] XbelError),
     #[error("Cannot find anything in Xbel matching: {0}")]
     XbelPathNotFound(XbelPath),
-    #[error("Cannot find anything in Xbel matching id: {0}")]
-    IdNotFound(String),
-    #[error("Cannot find anything in Xbel matching path: {0}")]
-    PathNotFound(String),
     #[error("Item found with id: {0} but it is not a folder")]
     NotaFolder(String),
     // TODO: remap error GitAddError, GitCommitError ...
@@ -337,133 +290,151 @@ fn bookmark_add(
         return Err(BookmarkAddError::PushWithoutUrl);
     }
 
+    // Read xbel
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
-    let xbel_ = std::fs::File::open(bookmark_file_path.as_path())?;
-    let mut xbel: Xbel = from_reader(BufReader::new(xbel_))?;
+    let mut xbel = Xbel::from_file(&bookmark_file_path)?;
 
     // Build the bookmark
     let bookmark = xbel.new_bookmark(add_args.url.as_str(), add_args.title.as_str());
 
     // Find where to put the bookmark
     let xbel_path = XbelPath::from(&add_args.under);
-    let items = xbel
+    let (item_index, items) = xbel
         .get_items_mut(&xbel_path)
         .ok_or(BookmarkAddError::XbelPathNotFound(xbel_path.clone()))?;
 
     match xbel_path {
         XbelPath::Root => items.push(bookmark),
         XbelPath::Id(id) => {
-            
             if let Under::Id(_id, placement) = &add_args.under {
-                // Find the item (matching id) inside items
-                let (item, item_idx) = items
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(idx, i)| { 
-                        if *i.get_id() == id.to_string() { Some((i, idx)) } else { None } 
-                    })
-                    .ok_or(BookmarkAddError::IdNotFound(id.to_string()))?;
-                
                 match placement {
                     Placement::Before => {
-                        items.insert(item_idx, bookmark);
-                    },
+                        items.insert(item_index, bookmark);
+                    }
                     Placement::After => {
-                        items.insert(item_idx.saturating_add(1), bookmark);
-                    },
+                        items.insert(item_index.saturating_add(1), bookmark);
+                    }
                     Placement::InFolderPrepend => {
-                        if let XbelItem::Folder(f) = item {
+                        if let XbelItem::Folder(f) = &mut items[item_index] {
                             f.items.insert(0, bookmark)
                         } else {
                             return Err(BookmarkAddError::NotaFolder(id.to_string()));
                         }
-                    },
+                    }
                     Placement::InFolderAppend => {
-                        if let XbelItem::Folder(f) = item {
+                        if let XbelItem::Folder(f) = &mut items[item_index] {
                             f.items.push(bookmark)
                         } else {
                             return Err(BookmarkAddError::NotaFolder(id.to_string()));
                         }
-                    },
+                    }
                 }
-                
             } else {
                 unreachable!()
             }
         }
-        XbelPath::Path(s) => {
-            
-            let path_split_last = s
-                .rsplit_once('/')// split from the end
-                .map(|(_rest, s)| s.to_string()) // discard rest and to_string
-                .unwrap_or(s.clone());
-            
-            // Find the item (matching last path) inside items
-            let (item, item_idx) = items
-                .iter_mut()
-                .enumerate()
-                .find_map(|(idx, i)| {
-                    if *i.get_title().text == path_split_last { Some((i, idx)) } else { None }
-                })
-                .ok_or(BookmarkAddError::PathNotFound(s.to_string()))?;
-            
-            if let XbelItem::Folder(f) = item {
+        XbelPath::Path(_s) => {
+            if let XbelItem::Folder(f) = &mut items[item_index] {
                 f.items.push(bookmark)
             } else {
-                return Err(BookmarkAddError::NotaFolder(item.get_id().to_string()));
+                return Err(BookmarkAddError::NotaFolder(
+                    items[item_index].get_id().to_string(),
+                ));
             }
-        },
+        }
     };
 
     println!("xbel: {:?}", xbel);
-    {
-        let mut f = std::fs::File::options()
-            .write(true)
-            .open(bookmark_file_path.as_path())?;
-
-        let buffer = xbel.write_to_string();
-        f.write_all(buffer.as_bytes())?;
-    }
+    // Write to file locally
+    xbel.to_file(bookmark_file_path)?;
 
     if !add_args.disable_push {
-        // Configured author signature
-        let author = repo.signature()?;
+        git_push(repo, bookmark_file_path_xbel.as_path())?;
+    }
 
-        // git add
-        let status = repo.status_file(bookmark_file_path_xbel.as_path())?;
-        println!("status: {:?}", status);
-        let mut index = repo.index()?;
-        index.add_path(bookmark_file_path_xbel.as_path())?;
-        // the modified in-memory index need to flush back to disk
-        index.write()?;
+    Ok(())
+}
 
-        // git commit
+#[derive(Error, Debug)]
+enum BookmarkRemoveError {
+    #[error("Error: please provide git repository url (or use --disable-push)")]
+    PushWithoutUrl,
+    #[error(transparent)]
+    XbelReadError(#[from] XbelError),
+    #[error("Cannot find anything in Xbel matching: {0}")]
+    XbelPathNotFound(XbelPath),
+    // // TODO: remap error GitAddError, GitCommitError ...
+    #[error(transparent)]
+    GitError(#[from] git2::Error),
+}
 
-        // returns the object id you can use to look up the actual tree object
-        let new_tree_oid = index.write_tree()?;
-        // this is our new tree, i.e. the root directory of the new commit
-        let new_tree = repo.find_tree(new_tree_oid)?;
+fn bookmark_rm(
+    rm_args: &RemoveArgs,
+    repository_folder: PathBuf,
+    repo: &Repository,
+    repository_url: Option<String>,
+) -> Result<(), BookmarkRemoveError> {
+    if !rm_args.disable_push && repository_url.is_none() {
+        return Err(BookmarkRemoveError::PushWithoutUrl);
+    }
 
-        // for simple commit, use current head as parent
-        // TODO: test
-        // you need more than one parent if the commit is a merge
-        let head = repo.head()?;
-        // FIXME: unwrap
-        let parent = repo.find_commit(head.target().unwrap())?;
+    // Read xbel file
+    let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
+    let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
+    let mut xbel = Xbel::from_file(&bookmark_file_path)?;
 
-        let _commit_oid = repo.commit(
-            Some("HEAD"),
-            &author,
-            &author,
-            "Floccus bookmarks update",
-            &new_tree,
-            &[&parent],
-        )?;
+    // Find where to put the bookmark
+    let xbel_path = XbelPath::from(&rm_args.under);
+    let (item_index, items) = xbel
+        .get_items_mut(&xbel_path)
+        .ok_or(BookmarkRemoveError::XbelPathNotFound(xbel_path.clone()))?;
 
-        // git push
-        let mut origin = repo.find_remote("origin")?;
-        origin.push(&["refs/heads/main:refs/heads/main"], None)?;
+    match xbel_path {
+        XbelPath::Root => {
+            // TODO: return Error
+            unimplemented!()
+        }
+        XbelPath::Id(_id) => {
+            if rm_args.dry_run {
+                match &items[item_index] {
+                    XbelItem::Folder(f) => {
+                        // XXX:
+                        // Folder Debug print folder + all children recursively
+                        // Maybe we could print only the folder + children count ?
+                        println!("[Dry run] removing folder: {:?}", f);
+                    }
+                    XbelItem::Bookmark(b) => {
+                        println!("[Dry run] removing bookmark: {:?}", b);
+                    }
+                }
+            } else {
+                items.remove(item_index);
+            }
+        }
+        XbelPath::Path(_s) => {
+            if rm_args.dry_run {
+                match &items[item_index] {
+                    XbelItem::Folder(f) => {
+                        // TODO: print all children or just print the children count (recursive)
+                        println!("[Dry run] removing folder: {:?}", f);
+                    }
+                    XbelItem::Bookmark(b) => {
+                        println!("[Dry run] removing bookmark: {:?}", b);
+                    }
+                }
+            } else {
+                // TODO: print
+                items.remove(item_index);
+            }
+        }
+    }
+
+    // Write to file locally
+    xbel.to_file(bookmark_file_path)?;
+
+    if !rm_args.disable_push {
+        git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
     Ok(())
