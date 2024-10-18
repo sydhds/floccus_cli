@@ -10,3 +10,4 @@ git2 = "0.19"
 quick-xml = {  version = "0.36", features = ["serde", "serialize"] }
 directories = "5.0"
 thiserror = "1.0"
+config = { version = "0.14", default-features = false, features = ["toml"] }

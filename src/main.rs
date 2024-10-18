@@ -1,111 +1,20 @@
 mod git;
 mod xbel;
+mod cli;
 
 // std
 use std::borrow::Cow;
 use std::error::Error;
 use std::path::PathBuf;
-use std::str::FromStr;
 // third-party
-use clap::{Args, Parser, Subcommand};
+use clap::Parser;
 use directories::ProjectDirs;
-use git2::Repository;
+use git2::{Repository};
 use thiserror::Error;
 // internal
+use crate::cli::{parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, Placement, PrintArgs, RemoveArgs, Under};
 use crate::git::{git_clone, git_fetch, git_merge, git_push};
 use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
-
-#[derive(Debug, Clone, Parser)]
-#[command(name = "clap-subcommand")]
-#[command(about = "Clap subcommand example", long_about = None)]
-pub struct Cli {
-    #[arg(
-        short = 'r',
-        long = "repository",
-        help = "(Optional) git repository path"
-    )]
-    repository_folder: Option<PathBuf>,
-    #[arg(
-        short = 'g',
-        long = "git",
-        help = "Git repository url, e.g.https://github.com/your_username/your_repo.git"
-    )]
-    repository_url: Option<String>,
-    #[arg(
-        short = 'n',
-        long = "name",
-        help = "Repository local name",
-        default_value = "bookmarks"
-    )]
-    repository_name: String,
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Debug, Clone, PartialEq, Subcommand)]
-pub(crate) enum Commands {
-    #[command(about = "Print bookmarks")]
-    Print(PrintArgs),
-    #[command(about = "Add bookmark(s)")]
-    Add(AddArgs),
-    #[command(about = "Remove bookmark(s)")]
-    Rm(RemoveArgs),
-    #[command(about = "Find bookmark(s)")]
-    Find(FindArgs),
-}
-
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct PrintArgs {}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Placement {
-    Before,
-    After,
-    InFolderPrepend,
-    InFolderAppend,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Under {
-    Root,
-    Id(u64, Placement),
-    Folder(String),
-}
-
-impl FromStr for Under {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        const PLACEMENT_AFTER_PREFIX: &str = "after=";
-        const PLACEMENT_BEFORE_PREFIX: &str = "before=";
-        const PLACEMENT_APPEND_PREFIX: &str = "append=";
-        const PLACEMENT_PREPEND_PREFIX: &str = "prepend=";
-
-        match s {
-            "root" => Ok(Under::Root),
-            _ => {
-                let (rem, placement) =
-                    if let Some(stripped) = s.strip_prefix(PLACEMENT_AFTER_PREFIX) {
-                        (stripped, Placement::After)
-                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_BEFORE_PREFIX) {
-                        (stripped, Placement::Before)
-                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_APPEND_PREFIX) {
-                        (stripped, Placement::InFolderAppend)
-                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_PREPEND_PREFIX) {
-                        (stripped, Placement::InFolderPrepend)
-                    } else {
-                        (s, Placement::InFolderAppend)
-                    };
-
-                if let Ok(s_id) = rem.parse::<u64>() {
-                    Ok(Under::Id(s_id, placement))
-                } else {
-                    Ok(Under::Folder(s.to_string()))
-                }
-            }
-        }
-    }
-}
 
 impl From<&Under> for XbelPath {
     fn from(value: &Under) -> Self {
@@ -117,94 +26,40 @@ impl From<&Under> for XbelPath {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct AddArgs {
-    #[arg(short = 'b', long = "bookmark", help = "Url to add")]
-    url: String,
-    #[arg(short = 't', long = "title", help = "Url title or description")]
-    title: String,
-    #[arg(short = 'u', long = "under", help = "Add bookmark under ...", default_value = "root", value_parser=under_parser)]
-    under: Under,
-    #[arg(
-        long = "disable-push",
-        help = "Add the new bookmark locally but do not push (git push) it",
-        action,
-        required = false
-    )]
-    disable_push: bool,
-}
-
-// FIXME: Result error fix
-fn under_parser(s: &str) -> Result<Under, &'static str> {
-    Under::from_str(s).map_err(|_| "cannot parse under argument")
-}
-
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct RemoveArgs {
-    #[arg(short = 'i', long = "item", help = "Remove bookmark or folder", value_parser=under_parser)]
-    under: Under,
-    #[arg(
-        long = "disable-push",
-        help = "Add the new bookmark locally but do not push (git push) it",
-        action,
-        required = false
-    )]
-    disable_push: bool,
-    #[arg(
-        long = "dry-run",
-        help = "Do not remove - just print",
-        action,
-        required = false
-    )]
-    dry_run: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct FindArgs {
-    #[arg(
-        short = 't',
-        long = "title",
-        help = "Only search in folder or bookmark titles (Default: search on url & titles)",
-        action,
-        required = false
-    )]
-    title: bool,
-    #[arg(
-        short = 'u',
-        long = "url",
-        help = "Only search in folder or bookmark url (Default: search on url & titles)",
-        action,
-        required = false
-    )]
-    url: bool,
-    #[arg(
-        short = 'f',
-        long = "folder",
-        help = "Perform search only for folders",
-        action,
-        required = false
-    )]
-    folder: bool,
-    #[arg(
-        short = 'b',
-        long = "bookmark",
-        help = "Perform search only for bookmarks",
-        action,
-        required = false
-    )]
-    bookmark: bool,
-    /// What to find
-    find: String,
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
-    println!("cli: {:?}", cli);
+    
+    let config_path: Option<PathBuf> = {
+        // if FLOCCUS_CLI_CONFIG is set use it, otherwise find local config directory
+        // FIXME: const
+        let config_env = std::env::var("FLOCCUS_CLI_CONFIG");
+        if let Ok(config_env) = config_env {
+            Some(PathBuf::from(config_env))
+        } else {
+            
+            // FIXME: const
+            let cfg = ProjectDirs::from("org", "Floccus", "Floccus-cli")
+                .ok_or("Unable to determine local data directory")?
+                .config_local_dir()
+                .to_path_buf()
+                .join("config.toml");
+            
+            if cfg.exists() {
+                Some(cfg)
+            } else {
+                None
+            }
+        }
+    };
+    
+    println!("config_path: {:?}", config_path);
+    
+    let cli = parse_cli_and_override(config_path)?;
 
     // if repo folder is provided - use it otherwise - use a local data dir
     let repository_folder = if let Some(repository_folder) = cli.repository_folder {
         repository_folder
     } else {
+        // FIXME: const
         ProjectDirs::from("org", "Floccus", "Floccus-cli")
             .ok_or("Unable to determine local data directory")?
             .data_local_dir()
@@ -335,7 +190,8 @@ fn bookmark_add(
     repo: &Repository,
     repository_url: Option<String>,
 ) -> Result<(), BookmarkAddError> {
-    if !add_args.disable_push && repository_url.is_none() {
+
+    if add_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkAddError::PushWithoutUrl);
     }
 
@@ -398,8 +254,9 @@ fn bookmark_add(
     // Write to file locally
     xbel.to_file(bookmark_file_path)?;
 
-    if !add_args.disable_push {
-        git_push(repo, bookmark_file_path_xbel.as_path())?;
+    if add_args.disable_push == Some(false) {
+        // git_push(repo, bookmark_file_path_xbel.as_path())?;
+        println!("Should git push");
     }
 
     Ok(())
@@ -424,7 +281,8 @@ fn bookmark_rm(
     repo: &Repository,
     repository_url: Option<String>,
 ) -> Result<(), BookmarkRemoveError> {
-    if !rm_args.disable_push && repository_url.is_none() {
+
+    if rm_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkRemoveError::PushWithoutUrl);
     }
 
@@ -482,8 +340,9 @@ fn bookmark_rm(
     // Write to file locally
     xbel.to_file(bookmark_file_path)?;
 
-    if !rm_args.disable_push {
-        git_push(repo, bookmark_file_path_xbel.as_path())?;
+    if rm_args.disable_push == Some(false) {
+        // git_push(repo, bookmark_file_path_xbel.as_path())?;
+        println!("Should git push");
     }
 
     Ok(())
