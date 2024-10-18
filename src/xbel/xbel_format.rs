@@ -1,12 +1,15 @@
-use quick_xml::de::from_reader;
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
-use quick_xml::writer::Writer;
-use serde::{Deserialize, Serialize};
+// std
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Write};
 use std::path::Path;
+// third-party
+use quick_xml::de::from_reader;
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::writer::Writer;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+// internal
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
