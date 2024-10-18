@@ -12,4 +12,3 @@ pub(crate) struct Git {
 pub(crate) struct FloccusCliConfig {
     pub(crate) git: Git,
 }
-

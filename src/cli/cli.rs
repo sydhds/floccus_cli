@@ -41,12 +41,10 @@ pub struct Cli {
 pub enum ParseCliError {
     #[error(transparent)]
     ConfigError(#[from] config::ConfigError),
-
 }
 
 /// Parse from command line arguments and override values from config file
 pub fn parse_cli_and_override(config_path: Option<PathBuf>) -> Result<Cli, ParseCliError> {
-
     let mut cli = Cli::parse();
     if let Some(config_path) = config_path {
         let config = Config::builder()
@@ -55,18 +53,19 @@ pub fn parse_cli_and_override(config_path: Option<PathBuf>) -> Result<Cli, Parse
         let config = config.try_deserialize::<FloccusCliConfig>()?;
         override_cli_with(&mut cli, config);
     }
-    
+
     Ok(cli)
 }
 
 fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) {
-
     // Merge config into cli
     if config.git.enable {
         if cli.repository_url.is_none() {
             cli.repository_url = config.git.repository_url;
         }
-        if cli.repository_name == CLI_REPOSITORY_NAME_DEFAULT && config.git.repository_name.is_some() {
+        if cli.repository_name == CLI_REPOSITORY_NAME_DEFAULT
+            && config.git.repository_name.is_some()
+        {
             cli.repository_name = config.git.repository_name.unwrap();
         }
 
@@ -239,8 +238,8 @@ pub struct FindArgs {
 
 #[cfg(test)]
 mod tests {
-    use config::FileFormat;
     use super::*;
+    use config::FileFormat;
 
     const CONFIG_1: &str = r#"
 [logging]
@@ -256,15 +255,20 @@ mod tests {
 
     #[test]
     fn test_cli_override() {
-
-        let mut cli = Cli::parse_from(["target/debug/floccus_cli", "rm", "-i", "5", "--disable-push"]);
+        let mut cli = Cli::parse_from([
+            "target/debug/floccus_cli",
+            "rm",
+            "-i",
+            "5",
+            "--disable-push",
+        ]);
         let config = Config::builder()
             .add_source(config::File::from_str(CONFIG_1, FileFormat::Toml))
             .build()
             .unwrap();
         let config = config.try_deserialize::<FloccusCliConfig>().unwrap();
         override_cli_with(&mut cli, config);
-        
+
         if let Commands::Rm(rm_args) = cli.command {
             // Note: disable-push is set to false in config and then override by command line
             assert_eq!(rm_args.disable_push, Some(true))

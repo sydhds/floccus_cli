@@ -1,6 +1,6 @@
+mod cli;
 mod git;
 mod xbel;
-mod cli;
 
 // std
 use std::borrow::Cow;
@@ -9,10 +9,13 @@ use std::path::PathBuf;
 // third-party
 use clap::Parser;
 use directories::ProjectDirs;
-use git2::{Repository};
+use git2::Repository;
 use thiserror::Error;
 // internal
-use crate::cli::{parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, Placement, PrintArgs, RemoveArgs, Under};
+use crate::cli::{
+    parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, Placement, PrintArgs, RemoveArgs,
+    Under,
+};
 use crate::git::{git_clone, git_fetch, git_merge, git_push};
 use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
 
@@ -27,7 +30,6 @@ impl From<&Under> for XbelPath {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    
     let config_path: Option<PathBuf> = {
         // if FLOCCUS_CLI_CONFIG is set use it, otherwise find local config directory
         // FIXME: const
@@ -35,14 +37,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Ok(config_env) = config_env {
             Some(PathBuf::from(config_env))
         } else {
-            
             // FIXME: const
             let cfg = ProjectDirs::from("org", "Floccus", "Floccus-cli")
                 .ok_or("Unable to determine local data directory")?
                 .config_local_dir()
                 .to_path_buf()
                 .join("config.toml");
-            
+
             if cfg.exists() {
                 Some(cfg)
             } else {
@@ -50,9 +51,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     };
-    
+
     println!("config_path: {:?}", config_path);
-    
+
     let cli = parse_cli_and_override(config_path)?;
 
     // if repo folder is provided - use it otherwise - use a local data dir
@@ -190,7 +191,6 @@ fn bookmark_add(
     repo: &Repository,
     repository_url: Option<String>,
 ) -> Result<(), BookmarkAddError> {
-
     if add_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkAddError::PushWithoutUrl);
     }
@@ -281,7 +281,6 @@ fn bookmark_rm(
     repo: &Repository,
     repository_url: Option<String>,
 ) -> Result<(), BookmarkRemoveError> {
-
     if rm_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkRemoveError::PushWithoutUrl);
     }
