@@ -1,5 +1,5 @@
 // std
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::str::FromStr;
 // third-party
 use clap::{Args, Parser, Subcommand};
@@ -89,6 +89,8 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) {
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]
 pub enum Commands {
+    #[command(about = "Init Floccus cli config file")]
+    Init(InitArgs),
     #[command(about = "Print bookmarks")]
     Print(PrintArgs),
     #[command(about = "Add bookmark(s)")]
@@ -98,6 +100,9 @@ pub enum Commands {
     #[command(about = "Find bookmark(s)")]
     Find(FindArgs),
 }
+
+#[derive(Debug, Clone, PartialEq, Args)]
+pub struct InitArgs {}
 
 #[derive(Debug, Clone, PartialEq, Args)]
 pub struct PrintArgs {}

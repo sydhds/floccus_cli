@@ -1,7 +1,7 @@
-mod cli;
+mod cli_args;
 mod config;
 
-pub use cli::{
-    parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, ParseCliError, Placement, PrintArgs,
-    RemoveArgs, Under,
+pub use cli_args::{
+    parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, Placement, PrintArgs,
+    RemoveArgs, Under, InitArgs
 };

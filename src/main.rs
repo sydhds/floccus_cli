@@ -5,40 +5,30 @@ mod xbel;
 // std
 use std::borrow::Cow;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 // third-party
-use clap::Parser;
 use directories::ProjectDirs;
 use git2::Repository;
 use thiserror::Error;
 // internal
-use crate::cli::{
-    parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, Placement, PrintArgs, RemoveArgs,
-    Under,
-};
+use crate::cli::{parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, InitArgs, Placement, PrintArgs, RemoveArgs, Under};
 use crate::git::{git_clone, git_fetch, git_merge, git_push};
 use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
 
-impl From<&Under> for XbelPath {
-    fn from(value: &Under) -> Self {
-        match value {
-            Under::Root => XbelPath::Root,
-            Under::Id(id, _) => XbelPath::Id(*id),
-            Under::Folder(p) => XbelPath::Path(p.clone()),
-        }
-    }
-}
+const FLOCCUS_CLI_CONFIG_ENV: &str = "FLOCCUS_CLI_CONFIG";
+const FLOCCUS_CLI_QUALIFIER: &str = "app";
+const FLOCCUS_CLI_ORGANIZATION: &str = "";
+const FLOCCUS_CLI_APPLICATION: &str = "Floccus-cli";
 
 fn main() -> Result<(), Box<dyn Error>> {
+    
     let config_path: Option<PathBuf> = {
-        // if FLOCCUS_CLI_CONFIG is set use it, otherwise find local config directory
-        // FIXME: const
-        let config_env = std::env::var("FLOCCUS_CLI_CONFIG");
+        // if FLOCCUS_CLI_CONFIG environment variable is set use it, otherwise use local config dir.
+        let config_env = std::env::var(FLOCCUS_CLI_CONFIG_ENV);
         if let Ok(config_env) = config_env {
             Some(PathBuf::from(config_env))
         } else {
-            // FIXME: const
-            let cfg = ProjectDirs::from("org", "Floccus", "Floccus-cli")
+            let cfg = ProjectDirs::from(FLOCCUS_CLI_QUALIFIER, FLOCCUS_CLI_ORGANIZATION, FLOCCUS_CLI_APPLICATION)
                 .ok_or("Unable to determine local data directory")?
                 .config_local_dir()
                 .to_path_buf()
@@ -57,18 +47,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = parse_cli_and_override(config_path)?;
 
     // if repo folder is provided - use it otherwise - use a local data dir
-    let repository_folder = if let Some(repository_folder) = cli.repository_folder {
-        repository_folder
+    let repository_folder = if let Some(ref repository_folder) = cli.repository_folder {
+        repository_folder.clone()
     } else {
-        // FIXME: const
-        ProjectDirs::from("org", "Floccus", "Floccus-cli")
+        let repo_name = cli.repository_name.clone();
+        ProjectDirs::from(FLOCCUS_CLI_QUALIFIER, FLOCCUS_CLI_ORGANIZATION, FLOCCUS_CLI_APPLICATION)
             .ok_or("Unable to determine local data directory")?
             .data_local_dir()
-            .join(cli.repository_name)
+            .join(repo_name)
     };
 
-    let mut repository_need_pull = true; // no need to pull after a clone (for instance)
-
+    
+    /*
     let repo = if !repository_folder.exists() {
         // repository folder does not exist - need to clone
 
@@ -99,13 +89,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Get the commit associated with the HEAD reference
     let commit = &repo.find_commit(head.target().unwrap())?;
     println!("Repository at commit: {:?}: {:?}", commit, commit.message());
-
-    match cli.command {
+    */
+    
+    
+    match &cli.command {
+        Commands::Init(init_args) => {
+            init_app(init_args);
+        },
         Commands::Print(print_args) => {
-            bookmark_print(&print_args, repository_folder)?;
+            bookmark_print(print_args, repository_folder)?;
         }
         Commands::Add(add_args) => {
-            let res = bookmark_add(&add_args, repository_folder, &repo, cli.repository_url);
+            let repo = setup_repo(&cli, &repository_folder)?;
+            let res = bookmark_add(add_args, repository_folder, &repo, cli.repository_url);
 
             if let Err(e) = res {
                 eprintln!("Error: {}", e);
@@ -113,7 +109,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Commands::Rm(rm_args) => {
-            let res = bookmark_rm(&rm_args, repository_folder, &repo, cli.repository_url);
+            let repo = setup_repo(&cli, &repository_folder)?;
+            let res = bookmark_rm(rm_args, repository_folder, &repo, cli.repository_url);
 
             if let Err(e) = res {
                 eprintln!("Error: {}", e);
@@ -121,7 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Commands::Find(find_args) => {
-            let res = bookmark_find(&find_args, repository_folder);
+            let res = bookmark_find(find_args, repository_folder);
 
             if let Err(e) = res {
                 eprintln!("Error: {}", e);
@@ -131,6 +128,53 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     Ok(())
+}
+
+fn init_app(
+    _init_args: &InitArgs,
+) {
+    
+    todo!()
+    
+}
+
+fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn Error>> {
+    let mut repository_need_pull = true; // no need to pull after a clone (for instance)
+
+    let repo = if !repository_folder.exists() {
+        // repository folder does not exist - need to clone
+
+        // first check if repository url is provided
+        if cli.repository_url.is_none() {
+            return Err("Please provide a git repository url".into());
+        }
+        let repository_url = cli.repository_url.as_ref().unwrap();
+
+        let repo = git_clone(repository_url.as_str(), repository_folder)?;
+        repository_need_pull = false;
+        repo
+    } else {
+        Repository::open(repository_folder)?
+    };
+
+    // ~ git pull
+    if repository_need_pull {
+        // TODO: get current branch name from repo?
+        let mut remote = repo.find_remote("origin")?;
+        let remote_branch = "main";
+        let fetch_commit = git_fetch(&repo, &[remote_branch], &mut remote)?;
+        git_merge(&repo, remote_branch, fetch_commit)?;
+    }
+
+    {
+        // Get the HEAD reference
+        let head = &repo.head()?;
+        // Get the commit associated with the HEAD reference
+        let commit = &repo.find_commit(head.target().unwrap())?;
+        println!("Repository at commit: {:?}: {:?}", commit, commit.message());
+    }
+    
+    Ok(repo)
 }
 
 fn bookmark_print(
@@ -168,6 +212,16 @@ fn bookmark_print(
     }
 
     Ok(())
+}
+
+impl From<&Under> for XbelPath {
+    fn from(value: &Under) -> Self {
+        match value {
+            Under::Root => XbelPath::Root,
+            Under::Id(id, _) => XbelPath::Id(*id),
+            Under::Folder(p) => XbelPath::Path(p.clone()),
+        }
+    }
 }
 
 #[derive(Error, Debug)]
