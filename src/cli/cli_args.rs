@@ -3,7 +3,6 @@ use std::path::{PathBuf};
 use std::str::FromStr;
 // third-party
 use clap::{Args, Parser, Subcommand};
-use config::Config;
 use thiserror::Error;
 // internal
 use crate::cli::config::FloccusCliConfig;
@@ -40,17 +39,17 @@ pub struct Cli {
 #[derive(Error, Debug)]
 pub enum ParseCliError {
     #[error(transparent)]
-    ConfigError(#[from] config::ConfigError),
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    TomlError(#[from] toml::de::Error),
 }
 
 /// Parse from command line arguments and override values from config file
 pub fn parse_cli_and_override(config_path: Option<PathBuf>) -> Result<Cli, ParseCliError> {
     let mut cli = Cli::parse();
     if let Some(config_path) = config_path {
-        let config = Config::builder()
-            .add_source(config::File::from(config_path))
-            .build()?;
-        let config = config.try_deserialize::<FloccusCliConfig>()?;
+        let config_str = std::fs::read_to_string(config_path)?;
+        let config: FloccusCliConfig = toml::from_str(config_str.as_str())?;
         override_cli_with(&mut cli, config);
     }
 
@@ -244,7 +243,6 @@ pub struct FindArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config::FileFormat;
 
     const CONFIG_1: &str = r#"
 [logging]
@@ -267,11 +265,7 @@ mod tests {
             "5",
             "--disable-push",
         ]);
-        let config = Config::builder()
-            .add_source(config::File::from_str(CONFIG_1, FileFormat::Toml))
-            .build()
-            .unwrap();
-        let config = config.try_deserialize::<FloccusCliConfig>().unwrap();
+        let config: FloccusCliConfig = toml::from_str(CONFIG_1).unwrap();
         override_cli_with(&mut cli, config);
 
         if let Commands::Rm(rm_args) = cli.command {

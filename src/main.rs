@@ -5,11 +5,13 @@ mod xbel;
 // std
 use std::borrow::Cow;
 use std::error::Error;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 // third-party
 use directories::ProjectDirs;
 use git2::Repository;
 use thiserror::Error;
+use toml_edit::{value, DocumentMut, TomlError};
 // internal
 use crate::cli::{parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, InitArgs, Placement, PrintArgs, RemoveArgs, Under};
 use crate::git::{git_clone, git_fetch, git_merge, git_push};
@@ -20,13 +22,25 @@ const FLOCCUS_CLI_QUALIFIER: &str = "app";
 const FLOCCUS_CLI_ORGANIZATION: &str = "";
 const FLOCCUS_CLI_APPLICATION: &str = "Floccus-cli";
 
+const FLOCCUS_CONFIG_SAMPLE: &str = r#"
+[logging]
+    # Logging level -> 0: ERROR, 1: WARN, 2: INFO, 3: DEBUG, 4: TRACE
+    level = 2
+
+[git]
+    enable = true
+    repository_url = "https://github.com/__GITHUB_USER__/__GIT_REPO_NAME__.git"
+    repository_name = "bookmarks"
+    disable_push = true
+"#;
+
 fn main() -> Result<(), Box<dyn Error>> {
-    
-    let config_path: Option<PathBuf> = {
+
+    let (config_path, config_path_expected): (Option<PathBuf>, PathBuf) = {
         // if FLOCCUS_CLI_CONFIG environment variable is set use it, otherwise use local config dir.
         let config_env = std::env::var(FLOCCUS_CLI_CONFIG_ENV);
         if let Ok(config_env) = config_env {
-            Some(PathBuf::from(config_env))
+            (Some(PathBuf::from(config_env.clone())), PathBuf::from(config_env))
         } else {
             let cfg = ProjectDirs::from(FLOCCUS_CLI_QUALIFIER, FLOCCUS_CLI_ORGANIZATION, FLOCCUS_CLI_APPLICATION)
                 .ok_or("Unable to determine local data directory")?
@@ -35,16 +49,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .join("config.toml");
 
             if cfg.exists() {
-                Some(cfg)
+                (Some(cfg.clone()), cfg)
             } else {
-                None
+                (None, cfg)
             }
         }
     };
 
     println!("config_path: {:?}", config_path);
 
-    let cli = parse_cli_and_override(config_path)?;
+    let cli = parse_cli_and_override(config_path.clone())?;
+    
+    println!("cli: {:?}", cli);
 
     // if repo folder is provided - use it otherwise - use a local data dir
     let repository_folder = if let Some(ref repository_folder) = cli.repository_folder {
@@ -56,45 +72,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             .data_local_dir()
             .join(repo_name)
     };
-
     
-    /*
-    let repo = if !repository_folder.exists() {
-        // repository folder does not exist - need to clone
+    println!("repository_folder: {}", repository_folder.display());
 
-        // first check if repository url is provided
-        if cli.repository_url.is_none() {
-            return Err("Please provide a git repository url".into());
-        }
-        let repository_url = cli.repository_url.as_ref().unwrap();
-
-        let repo = git_clone(repository_url.as_str(), repository_folder.as_path())?;
-        repository_need_pull = false;
-        repo
-    } else {
-        Repository::open(repository_folder.as_path())?
-    };
-
-    // ~ git pull
-    if repository_need_pull {
-        // TODO: get current branch name from repo?
-        let mut remote = repo.find_remote("origin")?;
-        let remote_branch = "main";
-        let fetch_commit = git_fetch(&repo, &[remote_branch], &mut remote)?;
-        git_merge(&repo, remote_branch, fetch_commit)?;
-    }
-
-    // Get the HEAD reference
-    let head = &repo.head()?;
-    // Get the commit associated with the HEAD reference
-    let commit = &repo.find_commit(head.target().unwrap())?;
-    println!("Repository at commit: {:?}: {:?}", commit, commit.message());
-    */
-    
-    
     match &cli.command {
         Commands::Init(init_args) => {
-            init_app(init_args);
+            println!("init...");
+            let res = init_app(&cli, init_args, config_path_expected.as_path());
+            
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
         },
         Commands::Print(print_args) => {
             bookmark_print(print_args, repository_folder)?;
@@ -130,12 +119,59 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[derive(Error, Debug)]
+enum InitError {
+    #[error("Error: config path ({0}) already exists")]
+    ConfigExists(PathBuf),
+    #[error(transparent)]
+    TomlError(#[from] TomlError),
+    #[error("Please provide git repository url (use floccus-cli --help for more information)")]
+    GitRepositoryNotProvided,
+    #[error("Error while writing config file or creating parent folders for: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Unable to get parents for: {0}")]
+    NoParent(PathBuf),
+}
+
 fn init_app(
+    cli: &Cli,
     _init_args: &InitArgs,
-) {
+    config_path: &Path,
+) -> Result<(), InitError> {
     
-    todo!()
+    println!("Config file path: {:?}", config_path);
     
+    if config_path.exists() {
+        return Err(InitError::ConfigExists(config_path.to_path_buf()));
+    }
+    
+    if cli.repository_url.is_none() {
+        return Err(InitError::GitRepositoryNotProvided)
+    }
+    
+    let mut config_doc = FLOCCUS_CONFIG_SAMPLE.parse::<DocumentMut>()?;
+    // println!("config: {}", config_doc);
+    
+    let repository_url = cli.repository_url.as_ref().unwrap().clone();
+    config_doc["git"]["repository_url"] = value(repository_url);
+    
+    println!("New config: {}", config_doc);
+    
+    let config_path_parent = config_path
+        .parent()
+        .ok_or(InitError::NoParent(config_path.to_path_buf()))?;
+    std::fs::create_dir_all(config_path_parent)?;
+        
+    let mut f = std::fs::File::options()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(config_path)?;
+    f.write_all(config_doc.to_string().as_bytes())?;
+    
+    println!("Successfully written config file path: {:?} !", config_path);
+    
+    Ok(())
 }
 
 fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn Error>> {
@@ -173,7 +209,7 @@ fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn
         let commit = &repo.find_commit(head.target().unwrap())?;
         println!("Repository at commit: {:?}: {:?}", commit, commit.message());
     }
-    
+
     Ok(repo)
 }
 
