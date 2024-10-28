@@ -1,5 +1,5 @@
 // std
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 // third-party
 use clap::{Args, Parser, Subcommand};
