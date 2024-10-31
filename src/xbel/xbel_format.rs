@@ -465,6 +465,7 @@ impl<'a> Iterator for XbelNestingIterator<'a> {
 mod tests {
     use super::*;
     use quick_xml::de::from_str;
+    use tracing_test::traced_test;
 
     const XBEL_EMPTY: &str = r#"
             <?xml version="1.0" encoding="UTF-8"?>
@@ -537,6 +538,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn read_xbel_empty() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read an empty xbel file
         let xbel: Xbel = from_str(XBEL_EMPTY)?;
@@ -546,6 +548,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn read_xbel_1() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -579,6 +582,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn xbel_iter() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file and to iterate over content
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -628,6 +632,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn xbel_nesting_iter() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file and to iterate over content
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -670,6 +675,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn xbel_highest_id() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file and to iterate over content
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -678,6 +684,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn add_xbel_empty() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Add bookmark to empty Xbel
         let mut xbel: Xbel = from_str(XBEL_EMPTY)?;
@@ -700,6 +707,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn add_xbel_1() -> Result<(), quick_xml::errors::serialize::DeError> {
         let mut xbel: Xbel = from_str(XBEL_BANK)?;
         println!("xbel: {:?}", xbel);
@@ -713,6 +721,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn write_xbel() -> Result<(), quick_xml::errors::serialize::DeError> {
         /*
         let url_e = "www.ecosia.org";

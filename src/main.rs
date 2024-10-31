@@ -12,6 +12,7 @@ use directories::ProjectDirs;
 use git2::Repository;
 use thiserror::Error;
 use toml_edit::{value, DocumentMut, TomlError};
+use tracing::{debug, error, info};
 // internal
 use crate::cli::{
     parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, InitArgs, Placement, PrintArgs,
@@ -38,6 +39,11 @@ const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
 "#;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt()
+        // .with_max_level(tracing::Level::DEBUG)
+        // .with_env_filter(EnvFilter::from_default_env()) // RUST_LOG env variable
+        .init();
+
     let (config_path, config_path_expected): (Option<PathBuf>, PathBuf) = {
         // if FLOCCUS_CLI_CONFIG environment variable is set use it, otherwise use local config dir.
         let config_env = std::env::var(FLOCCUS_CLI_CONFIG_ENV);
@@ -65,11 +71,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    println!("config_path: {:?}", config_path);
+    debug!("config_path: {:?}", config_path);
 
     let cli = parse_cli_and_override(config_path.clone())?;
 
-    println!("cli: {:?}", cli);
+    debug!("cli args: {:?}", cli);
 
     // if repo folder is provided - use it otherwise - use a local data dir
     let repository_folder = if let Some(ref repository_folder) = cli.repository_folder {
@@ -86,11 +92,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join(repo_name)
     };
 
-    println!("repository_folder: {}", repository_folder.display());
+    info!("repository_folder: {}", repository_folder.display());
 
     match &cli.command {
         Commands::Init(init_args) => {
-            println!("init...");
             let res = init_app(&cli, init_args, config_path_expected.as_path());
 
             if let Err(e) = res {
@@ -99,6 +104,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Commands::Print(print_args) => {
+            debug!("deflkflfdk");
             let _repo = setup_repo(&cli, &repository_folder)?;
             bookmark_print(print_args, repository_folder)?;
         }
@@ -107,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let res = bookmark_add(add_args, repository_folder, &repo, cli.repository_url);
 
             if let Err(e) = res {
-                eprintln!("Error: {}", e);
+                error!("Error: {}", e);
                 std::process::exit(1);
             }
         }
@@ -116,7 +122,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let res = bookmark_rm(rm_args, repository_folder, &repo, cli.repository_url);
 
             if let Err(e) = res {
-                eprintln!("Error: {}", e);
+                error!("Error: {}", e);
                 std::process::exit(1);
             }
         }
@@ -124,7 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let res = bookmark_find(find_args, repository_folder);
 
             if let Err(e) = res {
-                eprintln!("Error: {}", e);
+                error!("Error: {}", e);
                 std::process::exit(1);
             }
         }
@@ -148,7 +154,7 @@ enum InitError {
 }
 
 fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), InitError> {
-    println!("Config file path: {:?}", config_path);
+    debug!("Config file path: {:?}", config_path);
 
     if config_path.exists() {
         return Err(InitError::ConfigExists(config_path.to_path_buf()));
@@ -164,7 +170,7 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
     let repository_url = cli.repository_url.as_ref().unwrap().clone();
     config_doc["git"]["repository_url"] = value(repository_url);
 
-    println!("New config: {}", config_doc);
+    debug!("New config: {}", config_doc);
 
     let config_path_parent = config_path
         .parent()
@@ -178,7 +184,7 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
         .open(config_path)?;
     f.write_all(config_doc.to_string().as_bytes())?;
 
-    println!("Successfully written config file path: {:?} !", config_path);
+    info!("Successfully written config file path: {:?}", config_path);
 
     Ok(())
 }
@@ -216,7 +222,7 @@ fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn
         let head = &repo.head()?;
         // Get the commit associated with the HEAD reference
         let commit = &repo.find_commit(head.target().unwrap())?;
-        println!("Repository at commit: {:?}: {:?}", commit, commit.message());
+        info!("Repository at commit: {:?}: {:?}", commit, commit.message());
     }
 
     Ok(repo)
@@ -349,7 +355,7 @@ fn bookmark_add(
         }
     };
 
-    println!("xbel: {:?}", xbel);
+    debug!("xbel: {:?}", xbel);
     // Write to file locally
     xbel.to_file(bookmark_file_path)?;
 

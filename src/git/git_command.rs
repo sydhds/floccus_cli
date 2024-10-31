@@ -1,7 +1,9 @@
+// std
 use std::path::Path;
-
+// third-party
 use git2::build::{CheckoutBuilder, RepoBuilder};
 use git2::{FetchOptions, Repository};
+use tracing::{debug, info, warn};
 
 pub fn git_clone(url: &str, to_path: &Path) -> Result<Repository, git2::Error> {
     /*
@@ -76,15 +78,15 @@ pub fn git_fetch<'a>(
     // Always fetch all tags.
     // Perform a download and also update tips
     fo.download_tags(git2::AutotagOption::All);
-    println!("Fetching {} for repo", remote.name().unwrap());
+    debug!("Fetching {} for repo", remote.name().unwrap());
     remote.fetch(refs, Some(&mut fo), None)?;
 
     // If there are local objects (we got a thin pack), then tell the user
     // how many objects we saved from having to cross the network.
     let stats = remote.stats();
     if stats.local_objects() > 0 {
-        println!(
-            "\rReceived {}/{} objects in {} bytes (used {} local \
+        info!(
+            "Received {}/{} objects in {} bytes (used {} local \
              objects)",
             stats.indexed_objects(),
             stats.total_objects(),
@@ -92,8 +94,8 @@ pub fn git_fetch<'a>(
             stats.local_objects()
         );
     } else {
-        println!(
-            "\rReceived {}/{} objects in {} bytes",
+        info!(
+            "Received {}/{} objects in {} bytes",
             stats.indexed_objects(),
             stats.total_objects(),
             stats.received_bytes()
@@ -114,7 +116,7 @@ fn fast_forward(
         None => String::from_utf8_lossy(lb.name_bytes()).to_string(),
     };
     let msg = format!("Fast-Forward: Setting {} to id: {}", name, rc.id());
-    println!("{}", msg);
+    info!("{}", msg);
     lb.set_target(rc.id(), &msg)?;
     repo.set_head(&name)?;
     repo.checkout_head(Some(
@@ -140,7 +142,7 @@ fn normal_merge(
     let mut idx = repo.merge_trees(&ancestor, &local_tree, &remote_tree, None)?;
 
     if idx.has_conflicts() {
-        println!("Merge conflicts detected...");
+        warn!("Merge conflicts detected...");
         repo.checkout_index(Some(&mut idx), None)?;
         return Ok(());
     }
@@ -174,7 +176,7 @@ pub fn git_merge<'a>(
 
     // 2. Do the appropriate merge
     if analysis.0.is_fast_forward() {
-        println!("Doing a fast forward");
+        debug!("Doing a fast forward");
         // do a fast forward
         let refname = format!("refs/heads/{}", remote_branch);
         match repo.find_reference(&refname) {
@@ -205,7 +207,7 @@ pub fn git_merge<'a>(
         let head_commit = repo.reference_to_annotated_commit(&repo.head()?)?;
         normal_merge(repo, &head_commit, &fetch_commit)?;
     } else {
-        println!("Nothing to do...");
+        info!("Nothing to do...");
     }
     Ok(())
 }
@@ -216,7 +218,7 @@ pub fn git_push(repo: &Repository, file_to_add: &Path) -> Result<(), git2::Error
 
     // git add
     let status = repo.status_file(file_to_add)?;
-    println!("status: {:?}", status);
+    info!("status: {:?}", status);
     let mut index = repo.index()?;
 
     index.add_path(file_to_add)?;

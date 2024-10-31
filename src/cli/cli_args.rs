@@ -10,8 +10,8 @@ use crate::cli::config::FloccusCliConfig;
 const CLI_REPOSITORY_NAME_DEFAULT: &str = "bookmarks";
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "clap-subcommand")]
-#[command(about = "Clap subcommand example", long_about = None)]
+#[command(name = "floccus_cli")]
+#[command(version, about = "A cli tool compatible with Floccus", long_about = None)]
 pub struct Cli {
     #[arg(
         short = 'r',
@@ -92,11 +92,11 @@ pub enum Commands {
     Init(InitArgs),
     #[command(about = "Print bookmarks")]
     Print(PrintArgs),
-    #[command(about = "Add bookmark(s)")]
+    #[command(about = "Add bookmark")]
     Add(AddArgs),
-    #[command(about = "Remove bookmark(s)")]
+    #[command(about = "Remove bookmark")]
     Rm(RemoveArgs),
-    #[command(about = "Find bookmark(s)")]
+    #[command(about = "Find bookmark")]
     Find(FindArgs),
 }
 
