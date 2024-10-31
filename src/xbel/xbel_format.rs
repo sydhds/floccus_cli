@@ -1,12 +1,15 @@
-use quick_xml::de::from_reader;
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
-use quick_xml::writer::Writer;
-use serde::{Deserialize, Serialize};
+// std
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::io::{BufReader, Write};
 use std::path::Path;
+// third-party
+use quick_xml::de::from_reader;
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::writer::Writer;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+// internal
 
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
@@ -90,6 +93,7 @@ pub struct Folder {
 }
 
 impl Folder {
+    #[allow(dead_code)]
     fn new(id: &str, title: &str, items: Option<Vec<XbelItem>>) -> Self {
         Self {
             id: id.to_string(),
@@ -127,6 +131,7 @@ pub struct Xbel {
 }
 
 impl Xbel {
+    #[allow(dead_code)]
     fn new(items: Option<Vec<XbelItem>>) -> Self {
         Self {
             version: "1.0".to_string(),
@@ -134,34 +139,36 @@ impl Xbel {
         }
     }
 
-    fn xml_header(&self) -> &str {
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">"#
-    }
+    /*
+        fn xml_header(&self) -> &str {
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">"#
+        }
 
-    pub(crate) fn add_header(&self, buffer: &str) -> String {
-        let xbel_start_tag = format!(r#"<xbel version="{}">"#, self.version);
-        let xbel_start_tag_len = xbel_start_tag.chars().count();
-        let xbel_start_tag_new = format!(
-            r#"
-<xbel version="{}">
-<!--- highestId :{}: for Floccus bookmark sync browser extension -->
-"#,
-            self.version,
-            self.get_highest_id()
-        );
+        pub(crate) fn add_header(&self, buffer: &str) -> String {
+            let xbel_start_tag = format!(r#"<xbel version="{}">"#, self.version);
+            let xbel_start_tag_len = xbel_start_tag.chars().count();
+            let xbel_start_tag_new = format!(
+                r#"
+    <xbel version="{}">
+    <!--- highestId :{}: for Floccus bookmark sync browser extension -->
+    "#,
+                self.version,
+                self.get_highest_id()
+            );
 
-        let mut buffer_new = String::with_capacity(
-            buffer.len() - xbel_start_tag.len()
-                + xbel_start_tag_new.len()
-                + self.xml_header().len(),
-        );
+            let mut buffer_new = String::with_capacity(
+                buffer.len() - xbel_start_tag.len()
+                    + xbel_start_tag_new.len()
+                    + self.xml_header().len(),
+            );
 
-        buffer_new.push_str(self.xml_header());
-        buffer_new.push_str(xbel_start_tag_new.as_str());
-        buffer_new.extend(buffer.chars().skip(xbel_start_tag_len));
-        buffer_new
-    }
+            buffer_new.push_str(self.xml_header());
+            buffer_new.push_str(xbel_start_tag_new.as_str());
+            buffer_new.extend(buffer.chars().skip(xbel_start_tag_len));
+            buffer_new
+        }
+        */
 
     pub(crate) fn get_highest_id(&self) -> u64 {
         let it = XbelIterator::new(self);
@@ -412,6 +419,7 @@ impl<'a> Iterator for XbelIterator<'a> {
 #[derive(Debug)]
 pub enum XbelItemOrEnd<'s> {
     Item(&'s XbelItem),
+    #[allow(dead_code)]
     End(String), // id
 }
 
@@ -763,6 +771,7 @@ mod tests {
         Ok(())
     }
 
+    /*
     #[test]
     fn write_xbel_ser() -> Result<(), quick_xml::errors::serialize::DeError> {
         let url_e = "www.ecosia.org";
@@ -800,4 +809,5 @@ mod tests {
 
         Ok(())
     }
+    */
 }

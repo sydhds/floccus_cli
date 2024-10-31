@@ -1,216 +1,189 @@
+mod cli;
 mod git;
 mod xbel;
 
 // std
 use std::borrow::Cow;
 use std::error::Error;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 // third-party
-use clap::{Args, Parser, Subcommand};
 use directories::ProjectDirs;
 use git2::Repository;
 use thiserror::Error;
+use toml_edit::{value, DocumentMut, TomlError};
 // internal
+use crate::cli::{
+    parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, InitArgs, Placement, PrintArgs,
+    RemoveArgs, Under,
+};
 use crate::git::{git_clone, git_fetch, git_merge, git_push};
 use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
 
-#[derive(Debug, Clone, Parser)]
-#[command(name = "clap-subcommand")]
-#[command(about = "Clap subcommand example", long_about = None)]
-pub struct Cli {
-    #[arg(
-        short = 'r',
-        long = "repository",
-        help = "(Optional) git repository path"
-    )]
-    repository_folder: Option<PathBuf>,
-    #[arg(
-        short = 'g',
-        long = "git",
-        help = "Git repository url, e.g.https://github.com/your_username/your_repo.git"
-    )]
-    repository_url: Option<String>,
-    #[arg(
-        short = 'n',
-        long = "name",
-        help = "Repository local name",
-        default_value = "bookmarks"
-    )]
-    repository_name: String,
-    #[command(subcommand)]
-    command: Commands,
-}
+const FLOCCUS_CLI_CONFIG_ENV: &str = "FLOCCUS_CLI_CONFIG";
+const FLOCCUS_CLI_QUALIFIER: &str = "app";
+const FLOCCUS_CLI_ORGANIZATION: &str = "";
+const FLOCCUS_CLI_APPLICATION: &str = "Floccus-cli";
 
-#[derive(Debug, Clone, PartialEq, Subcommand)]
-pub(crate) enum Commands {
-    #[command(about = "Print bookmarks")]
-    Print(PrintArgs),
-    #[command(about = "Add bookmark(s)")]
-    Add(AddArgs),
-    #[command(about = "Remove bookmark(s)")]
-    Rm(RemoveArgs),
-    #[command(about = "Find bookmark(s)")]
-    Find(FindArgs),
-}
+const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
+[logging]
+    # Logging level -> 0: ERROR, 1: WARN, 2: INFO, 3: DEBUG, 4: TRACE
+    level = 2
 
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct PrintArgs {}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Placement {
-    Before,
-    After,
-    InFolderPrepend,
-    InFolderAppend,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Under {
-    Root,
-    Id(u64, Placement),
-    Folder(String),
-}
-
-impl FromStr for Under {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        const PLACEMENT_AFTER_PREFIX: &str = "after=";
-        const PLACEMENT_BEFORE_PREFIX: &str = "before=";
-        const PLACEMENT_APPEND_PREFIX: &str = "append=";
-        const PLACEMENT_PREPEND_PREFIX: &str = "prepend=";
-
-        match s {
-            "root" => Ok(Under::Root),
-            _ => {
-                let (rem, placement) =
-                    if let Some(stripped) = s.strip_prefix(PLACEMENT_AFTER_PREFIX) {
-                        (stripped, Placement::After)
-                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_BEFORE_PREFIX) {
-                        (stripped, Placement::Before)
-                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_APPEND_PREFIX) {
-                        (stripped, Placement::InFolderAppend)
-                    } else if let Some(stripped) = s.strip_prefix(PLACEMENT_PREPEND_PREFIX) {
-                        (stripped, Placement::InFolderPrepend)
-                    } else {
-                        (s, Placement::InFolderAppend)
-                    };
-
-                if let Ok(s_id) = rem.parse::<u64>() {
-                    Ok(Under::Id(s_id, placement))
-                } else {
-                    Ok(Under::Folder(s.to_string()))
-                }
-            }
-        }
-    }
-}
-
-impl From<&Under> for XbelPath {
-    fn from(value: &Under) -> Self {
-        match value {
-            Under::Root => XbelPath::Root,
-            Under::Id(id, _) => XbelPath::Id(*id),
-            Under::Folder(p) => XbelPath::Path(p.clone()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct AddArgs {
-    #[arg(short = 'b', long = "bookmark", help = "Url to add")]
-    url: String,
-    #[arg(short = 't', long = "title", help = "Url title or description")]
-    title: String,
-    #[arg(short = 'u', long = "under", help = "Add bookmark under ...", default_value = "root", value_parser=under_parser)]
-    under: Under,
-    #[arg(
-        long = "disable-push",
-        help = "Add the new bookmark locally but do not push (git push) it",
-        action,
-        required = false
-    )]
-    disable_push: bool,
-}
-
-// FIXME: Result error fix
-fn under_parser(s: &str) -> Result<Under, &'static str> {
-    Under::from_str(s).map_err(|_| "cannot parse under argument")
-}
-
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct RemoveArgs {
-    #[arg(short = 'i', long = "item", help = "Remove bookmark or folder", value_parser=under_parser)]
-    under: Under,
-    #[arg(
-        long = "disable-push",
-        help = "Add the new bookmark locally but do not push (git push) it",
-        action,
-        required = false
-    )]
-    disable_push: bool,
-    #[arg(
-        long = "dry-run",
-        help = "Do not remove - just print",
-        action,
-        required = false
-    )]
-    dry_run: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Args)]
-pub struct FindArgs {
-    #[arg(
-        short = 't',
-        long = "title",
-        help = "Only search in folder or bookmark titles (Default: search on url & titles)",
-        action,
-        required = false
-    )]
-    title: bool,
-    #[arg(
-        short = 'u',
-        long = "url",
-        help = "Only search in folder or bookmark url (Default: search on url & titles)",
-        action,
-        required = false
-    )]
-    url: bool,
-    #[arg(
-        short = 'f',
-        long = "folder",
-        help = "Perform search only for folders",
-        action,
-        required = false
-    )]
-    folder: bool,
-    #[arg(
-        short = 'b',
-        long = "bookmark",
-        help = "Perform search only for bookmarks",
-        action,
-        required = false
-    )]
-    bookmark: bool,
-    /// What to find
-    find: String,
-}
+[git]
+    enable = true
+    repository_url = "https://github.com/__GITHUB_USER__/__GIT_REPO_NAME__.git"
+    repository_name = "bookmarks"
+    disable_push = true
+"#;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
+    let (config_path, config_path_expected): (Option<PathBuf>, PathBuf) = {
+        // if FLOCCUS_CLI_CONFIG environment variable is set use it, otherwise use local config dir.
+        let config_env = std::env::var(FLOCCUS_CLI_CONFIG_ENV);
+        if let Ok(config_env) = config_env {
+            (
+                Some(PathBuf::from(config_env.clone())),
+                PathBuf::from(config_env),
+            )
+        } else {
+            let cfg = ProjectDirs::from(
+                FLOCCUS_CLI_QUALIFIER,
+                FLOCCUS_CLI_ORGANIZATION,
+                FLOCCUS_CLI_APPLICATION,
+            )
+            .ok_or("Unable to determine local data directory")?
+            .config_local_dir()
+            .to_path_buf()
+            .join("config.toml");
+
+            if cfg.exists() {
+                (Some(cfg.clone()), cfg)
+            } else {
+                (None, cfg)
+            }
+        }
+    };
+
+    println!("config_path: {:?}", config_path);
+
+    let cli = parse_cli_and_override(config_path.clone())?;
+
     println!("cli: {:?}", cli);
 
     // if repo folder is provided - use it otherwise - use a local data dir
-    let repository_folder = if let Some(repository_folder) = cli.repository_folder {
-        repository_folder
+    let repository_folder = if let Some(ref repository_folder) = cli.repository_folder {
+        repository_folder.clone()
     } else {
-        ProjectDirs::from("org", "Floccus", "Floccus-cli")
-            .ok_or("Unable to determine local data directory")?
-            .data_local_dir()
-            .join(cli.repository_name)
+        let repo_name = cli.repository_name.clone();
+        ProjectDirs::from(
+            FLOCCUS_CLI_QUALIFIER,
+            FLOCCUS_CLI_ORGANIZATION,
+            FLOCCUS_CLI_APPLICATION,
+        )
+        .ok_or("Unable to determine local data directory")?
+        .data_local_dir()
+        .join(repo_name)
     };
 
+    println!("repository_folder: {}", repository_folder.display());
+
+    match &cli.command {
+        Commands::Init(init_args) => {
+            println!("init...");
+            let res = init_app(&cli, init_args, config_path_expected.as_path());
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Print(print_args) => {
+            let _repo = setup_repo(&cli, &repository_folder)?;
+            bookmark_print(print_args, repository_folder)?;
+        }
+        Commands::Add(add_args) => {
+            let repo = setup_repo(&cli, &repository_folder)?;
+            let res = bookmark_add(add_args, repository_folder, &repo, cli.repository_url);
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Rm(rm_args) => {
+            let repo = setup_repo(&cli, &repository_folder)?;
+            let res = bookmark_rm(rm_args, repository_folder, &repo, cli.repository_url);
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Find(find_args) => {
+            let res = bookmark_find(find_args, repository_folder);
+
+            if let Err(e) = res {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+
+    Ok(())
+}
+
+#[derive(Error, Debug)]
+enum InitError {
+    #[error("Error: config path ({0}) already exists")]
+    ConfigExists(PathBuf),
+    #[error(transparent)]
+    TomlError(#[from] TomlError),
+    #[error("Please provide git repository url (use floccus-cli --help for more information)")]
+    GitRepositoryNotProvided,
+    #[error("Error while writing config file or creating parent folders for: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Unable to get parents for: {0}")]
+    NoParent(PathBuf),
+}
+
+fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), InitError> {
+    println!("Config file path: {:?}", config_path);
+
+    if config_path.exists() {
+        return Err(InitError::ConfigExists(config_path.to_path_buf()));
+    }
+
+    if cli.repository_url.is_none() {
+        return Err(InitError::GitRepositoryNotProvided);
+    }
+
+    let mut config_doc = FLOCCUS_CLI_CONFIG_SAMPLE.parse::<DocumentMut>()?;
+    // println!("config: {}", config_doc);
+
+    let repository_url = cli.repository_url.as_ref().unwrap().clone();
+    config_doc["git"]["repository_url"] = value(repository_url);
+
+    println!("New config: {}", config_doc);
+
+    let config_path_parent = config_path
+        .parent()
+        .ok_or(InitError::NoParent(config_path.to_path_buf()))?;
+    std::fs::create_dir_all(config_path_parent)?;
+
+    let mut f = std::fs::File::options()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(config_path)?;
+    f.write_all(config_doc.to_string().as_bytes())?;
+
+    println!("Successfully written config file path: {:?} !", config_path);
+
+    Ok(())
+}
+
+fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn Error>> {
     let mut repository_need_pull = true; // no need to pull after a clone (for instance)
 
     let repo = if !repository_folder.exists() {
@@ -222,11 +195,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         let repository_url = cli.repository_url.as_ref().unwrap();
 
-        let repo = git_clone(repository_url.as_str(), repository_folder.as_path())?;
+        let repo = git_clone(repository_url.as_str(), repository_folder)?;
         repository_need_pull = false;
         repo
     } else {
-        Repository::open(repository_folder.as_path())?
+        Repository::open(repository_folder)?
     };
 
     // ~ git pull
@@ -238,43 +211,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         git_merge(&repo, remote_branch, fetch_commit)?;
     }
 
-    // Get the HEAD reference
-    let head = &repo.head()?;
-    // Get the commit associated with the HEAD reference
-    let commit = &repo.find_commit(head.target().unwrap())?;
-    println!("Repository at commit: {:?}: {:?}", commit, commit.message());
+    {
+        // Get the HEAD reference
+        let head = &repo.head()?;
+        // Get the commit associated with the HEAD reference
+        let commit = &repo.find_commit(head.target().unwrap())?;
+        println!("Repository at commit: {:?}: {:?}", commit, commit.message());
+    }
 
-    match cli.command {
-        Commands::Print(print_args) => {
-            bookmark_print(&print_args, repository_folder)?;
-        }
-        Commands::Add(add_args) => {
-            let res = bookmark_add(&add_args, repository_folder, &repo, cli.repository_url);
-
-            if let Err(e) = res {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        Commands::Rm(rm_args) => {
-            let res = bookmark_rm(&rm_args, repository_folder, &repo, cli.repository_url);
-
-            if let Err(e) = res {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        Commands::Find(find_args) => {
-            let res = bookmark_find(&find_args, repository_folder);
-
-            if let Err(e) = res {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-    };
-
-    Ok(())
+    Ok(repo)
 }
 
 fn bookmark_print(
@@ -314,6 +259,16 @@ fn bookmark_print(
     Ok(())
 }
 
+impl From<&Under> for XbelPath {
+    fn from(value: &Under) -> Self {
+        match value {
+            Under::Root => XbelPath::Root,
+            Under::Id(id, _) => XbelPath::Id(*id),
+            Under::Folder(p) => XbelPath::Path(p.clone()),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 enum BookmarkAddError {
     #[error("Error: please provide git repository url (or use --disable-push)")]
@@ -335,7 +290,7 @@ fn bookmark_add(
     repo: &Repository,
     repository_url: Option<String>,
 ) -> Result<(), BookmarkAddError> {
-    if !add_args.disable_push && repository_url.is_none() {
+    if add_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkAddError::PushWithoutUrl);
     }
 
@@ -398,7 +353,7 @@ fn bookmark_add(
     // Write to file locally
     xbel.to_file(bookmark_file_path)?;
 
-    if !add_args.disable_push {
+    if add_args.disable_push == Some(false) {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
@@ -424,7 +379,7 @@ fn bookmark_rm(
     repo: &Repository,
     repository_url: Option<String>,
 ) -> Result<(), BookmarkRemoveError> {
-    if !rm_args.disable_push && repository_url.is_none() {
+    if rm_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkRemoveError::PushWithoutUrl);
     }
 
@@ -482,7 +437,7 @@ fn bookmark_rm(
     // Write to file locally
     xbel.to_file(bookmark_file_path)?;
 
-    if !rm_args.disable_push {
+    if rm_args.disable_push == Some(false) {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
