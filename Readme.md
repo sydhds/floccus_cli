@@ -1,60 +1,50 @@
 # Floccus cli
 
-A Rust-written cli tool for [Floccus](www.floccus.org)
+A cli tool (written in [Rust](https://www.rust-lang.org)) for [Floccus](www.floccus.org)
 
-## Status
+Limitations:
+* Sync is only git ([create an issue for other backend](https://github.com/sydhds/floccus_cli/issues/new/choose))
+* [Git ssh url not supported](https://github.com/sydhds/floccus_cli/issues/5)
 
-* [Backend]
-  * Git
-  * [TODO] Google Drive
-  * [TODO] Nextcloud
+## Install
 
-### Backend Git - Status 
+cargo install --locked --git https://github.com/sydhds/floccus_cli.git
 
-* [DONE] Read / Print bookmarks sync with git
-* [EXPERIMENTAL] Add a new bookmark
-* [TODO] Rm/Find bookmark
-* [TODO] Config file
-* [TODO] CI
+## Quickstart
 
-## Howto
+- Setup floccus and sync with a git repository
+- Init floccus_cli config file:
+  - floccus_cli -g https://__GITHUB_TOKEN__@github.com/your_username/your_repo.git print
+- floccus_cli print
+- floccus_cli add -b https://example.com -t "Example www site" -u after=3 --disable-push
 
-* cargo build
-* ./target/debug/floccus_cli --help
+## Documentation
 
-### Print bookmarks
-
-* Init floccus_cli:
-* ./target/debug/floccus_cli -r https://github.com/your_username/your_repo.git print
-* After:
-* ./target/debug/floccus-cli print
-
-### Add a new bookmark (EXPERIMENTAL, Default: append to root)
-
-* ./target/debug/floccus-cli add -b https://example.com -t "Example www site" --disable-push
+### Add 
 
 * Add a bookmark after a given id (folder or bookmark)
-  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u after=3 --disable-push
+  * floccus_cli add -b https://example.com -t "Example www site" -u after=3 --disable-push
 * Add a bookmark in a given folder id (append)
-  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u 2 --disable-push
-  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u append=2 --disable-push
+  * floccus_cli add -b https://example.com -t "Example www site" -u 2 --disable-push
+  * floccus_cli add -b https://example.com -t "Example www site" -u append=2 --disable-push
 * Add a bookmark in a given folder id (prepend)
-  * ./target/debug/floccus-cli add -b https://example.com -t "Example www site" -u prepend=2 --disable-push
+  * floccus_cli add -b https://example.com -t "Example www site" -u prepend=2 --disable-push
 
-Note: 
-* Pushing (git push) by floccus-cli is experimental - for now use --disable-push && push manually
-
-### Remove a bookmark / folder (EXPERIMENTAL)
+### Rm
 
 * Remove a bookmark using a given id
-  * ./target/debug/floccus-cli rm -i 14 --disable-push
+  * floccus_cli rm -i 14 --disable-push
 
-Note:
-* Pushing (git push) by floccus-cli is experimental - for now use --disable-push && push manually
+### Find
 
-### Find a bookmark or folder
+* ./target/debug/floccus-cli find "FOO"
+* ./target/debug/floccus-cli find --bookmark "FOO"
+* ./target/debug/floccus-cli find --bookmark --title "FOO"
 
-* Find a bookmark
-  * ./target/debug/floccus-cli find "FOO"
-  * ./target/debug/floccus-cli find --bookmark "FOO"
-  * ./target/debug/floccus-cli find --bookmark --title "FOO"
+## Contrib
+
+All contributions, code, feedback and strategic advice, are welcome. If you have a question you can open an issue on the repository. 
+
+## License
+
+MPL-2.0 (see [LICENSE](./LICENSE))
