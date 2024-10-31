@@ -138,37 +138,37 @@ impl Xbel {
             items: items.unwrap_or_default(),
         }
     }
-    
+
     /*
-    fn xml_header(&self) -> &str {
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">"#
-    }
+        fn xml_header(&self) -> &str {
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">"#
+        }
 
-    pub(crate) fn add_header(&self, buffer: &str) -> String {
-        let xbel_start_tag = format!(r#"<xbel version="{}">"#, self.version);
-        let xbel_start_tag_len = xbel_start_tag.chars().count();
-        let xbel_start_tag_new = format!(
-            r#"
-<xbel version="{}">
-<!--- highestId :{}: for Floccus bookmark sync browser extension -->
-"#,
-            self.version,
-            self.get_highest_id()
-        );
+        pub(crate) fn add_header(&self, buffer: &str) -> String {
+            let xbel_start_tag = format!(r#"<xbel version="{}">"#, self.version);
+            let xbel_start_tag_len = xbel_start_tag.chars().count();
+            let xbel_start_tag_new = format!(
+                r#"
+    <xbel version="{}">
+    <!--- highestId :{}: for Floccus bookmark sync browser extension -->
+    "#,
+                self.version,
+                self.get_highest_id()
+            );
 
-        let mut buffer_new = String::with_capacity(
-            buffer.len() - xbel_start_tag.len()
-                + xbel_start_tag_new.len()
-                + self.xml_header().len(),
-        );
+            let mut buffer_new = String::with_capacity(
+                buffer.len() - xbel_start_tag.len()
+                    + xbel_start_tag_new.len()
+                    + self.xml_header().len(),
+            );
 
-        buffer_new.push_str(self.xml_header());
-        buffer_new.push_str(xbel_start_tag_new.as_str());
-        buffer_new.extend(buffer.chars().skip(xbel_start_tag_len));
-        buffer_new
-    }
-    */
+            buffer_new.push_str(self.xml_header());
+            buffer_new.push_str(xbel_start_tag_new.as_str());
+            buffer_new.extend(buffer.chars().skip(xbel_start_tag_len));
+            buffer_new
+        }
+        */
 
     pub(crate) fn get_highest_id(&self) -> u64 {
         let it = XbelIterator::new(self);
