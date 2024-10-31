@@ -25,7 +25,7 @@ const FLOCCUS_CLI_QUALIFIER: &str = "app";
 const FLOCCUS_CLI_ORGANIZATION: &str = "";
 const FLOCCUS_CLI_APPLICATION: &str = "Floccus-cli";
 
-const FLOCCUS_CONFIG_SAMPLE: &str = r#"
+const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
 [logging]
     # Logging level -> 0: ERROR, 1: WARN, 2: INFO, 3: DEBUG, 4: TRACE
     level = 2
@@ -99,6 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Commands::Print(print_args) => {
+            let _repo = setup_repo(&cli, &repository_folder)?;
             bookmark_print(print_args, repository_folder)?;
         }
         Commands::Add(add_args) => {
@@ -157,7 +158,7 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
         return Err(InitError::GitRepositoryNotProvided);
     }
 
-    let mut config_doc = FLOCCUS_CONFIG_SAMPLE.parse::<DocumentMut>()?;
+    let mut config_doc = FLOCCUS_CLI_CONFIG_SAMPLE.parse::<DocumentMut>()?;
     // println!("config: {}", config_doc);
 
     let repository_url = cli.repository_url.as_ref().unwrap().clone();
@@ -353,8 +354,7 @@ fn bookmark_add(
     xbel.to_file(bookmark_file_path)?;
 
     if add_args.disable_push == Some(false) {
-        // git_push(repo, bookmark_file_path_xbel.as_path())?;
-        println!("Should git push");
+        git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
     Ok(())
@@ -438,8 +438,7 @@ fn bookmark_rm(
     xbel.to_file(bookmark_file_path)?;
 
     if rm_args.disable_push == Some(false) {
-        // git_push(repo, bookmark_file_path_xbel.as_path())?;
-        println!("Should git push");
+        git_push(repo, bookmark_file_path_xbel.as_path())?;
     }
 
     Ok(())

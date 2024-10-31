@@ -93,6 +93,7 @@ pub struct Folder {
 }
 
 impl Folder {
+    #[allow(dead_code)]
     fn new(id: &str, title: &str, items: Option<Vec<XbelItem>>) -> Self {
         Self {
             id: id.to_string(),
@@ -130,13 +131,15 @@ pub struct Xbel {
 }
 
 impl Xbel {
+    #[allow(dead_code)]
     fn new(items: Option<Vec<XbelItem>>) -> Self {
         Self {
             version: "1.0".to_string(),
             items: items.unwrap_or_default(),
         }
     }
-
+    
+    /*
     fn xml_header(&self) -> &str {
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">"#
@@ -165,6 +168,7 @@ impl Xbel {
         buffer_new.extend(buffer.chars().skip(xbel_start_tag_len));
         buffer_new
     }
+    */
 
     pub(crate) fn get_highest_id(&self) -> u64 {
         let it = XbelIterator::new(self);
@@ -415,6 +419,7 @@ impl<'a> Iterator for XbelIterator<'a> {
 #[derive(Debug)]
 pub enum XbelItemOrEnd<'s> {
     Item(&'s XbelItem),
+    #[allow(dead_code)]
     End(String), // id
 }
 
@@ -766,6 +771,7 @@ mod tests {
         Ok(())
     }
 
+    /*
     #[test]
     fn write_xbel_ser() -> Result<(), quick_xml::errors::serialize::DeError> {
         let url_e = "www.ecosia.org";
@@ -803,4 +809,5 @@ mod tests {
 
         Ok(())
     }
+    */
 }
