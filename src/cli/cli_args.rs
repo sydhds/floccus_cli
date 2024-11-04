@@ -10,7 +10,7 @@ use crate::cli::config::FloccusCliConfig;
 const CLI_REPOSITORY_NAME_DEFAULT: &str = "bookmarks";
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "floccus_cli")]
+#[command(name = "floccus-cli")]
 #[command(version, about = "A cli tool compatible with Floccus", long_about = None)]
 pub struct Cli {
     #[arg(
