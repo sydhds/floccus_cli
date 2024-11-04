@@ -12,7 +12,7 @@ cargo install --locked --git https://github.com/sydhds/floccus_cli.git
 
 ## Quickstart
 
-- Setup floccus and sync with a git repository
+- Setup Floccus and setup sync with a git repository
 - Init floccus-cli config file:
   - floccus-cli -g https://__GITHUB_TOKEN__@github.com/your_username/your_repo.git print
 - floccus-cli print
