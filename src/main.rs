@@ -13,6 +13,9 @@ use git2::Repository;
 use thiserror::Error;
 use toml_edit::{value, DocumentMut, TomlError};
 use tracing::{debug, error, info};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use url::Url;
 // internal
 use crate::cli::{
     parse_cli_and_override, AddArgs, Cli, Commands, FindArgs, InitArgs, Placement, PrintArgs,
@@ -35,13 +38,18 @@ const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
     enable = true
     repository_url = "https://github.com/__GITHUB_USER__/__GIT_REPO_NAME__.git"
     repository_name = "bookmarks"
+    repository_token = ""
     disable_push = true
 "#;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt()
-        // .with_max_level(tracing::Level::DEBUG)
-        // .with_env_filter(EnvFilter::from_default_env()) // RUST_LOG env variable
+
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(filter)
         .init();
 
     let (config_path, config_path_expected): (Option<PathBuf>, PathBuf) = {
@@ -104,7 +112,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Commands::Print(print_args) => {
-            debug!("deflkflfdk");
             let _repo = setup_repo(&cli, &repository_folder)?;
             bookmark_print(print_args, repository_folder)?;
         }
@@ -168,7 +175,11 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
     // println!("config: {}", config_doc);
 
     let repository_url = cli.repository_url.as_ref().unwrap().clone();
-    config_doc["git"]["repository_url"] = value(repository_url);
+    config_doc["git"]["repository_url"] = value(repository_url.to_string());
+    
+    if let Some(repository_token) = cli.repository_token.as_ref() {
+        config_doc["git"]["repository_token"] = value(repository_token);
+    }
 
     debug!("New config: {}", config_doc);
 
@@ -294,7 +305,7 @@ fn bookmark_add(
     add_args: &AddArgs,
     repository_folder: PathBuf,
     repo: &Repository,
-    repository_url: Option<String>,
+    repository_url: Option<Url>,
 ) -> Result<(), BookmarkAddError> {
     if add_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkAddError::PushWithoutUrl);
@@ -383,7 +394,7 @@ fn bookmark_rm(
     rm_args: &RemoveArgs,
     repository_folder: PathBuf,
     repo: &Repository,
-    repository_url: Option<String>,
+    repository_url: Option<Url>,
 ) -> Result<(), BookmarkRemoveError> {
     if rm_args.disable_push == Some(false) && repository_url.is_none() {
         return Err(BookmarkRemoveError::PushWithoutUrl);

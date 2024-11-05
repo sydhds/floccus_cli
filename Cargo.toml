@@ -3,13 +3,18 @@ name = "floccus-cli"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
 serde = { version = "1.0.214", features = ["derive"] }
 git2 = "0.19.0"
+url = { version = "2.5.3", features = ["serde"] }
 quick-xml = {  version = "0.37.0", features = ["serde", "serialize"] }
 directories = "5.0.1"
-thiserror = "1.0.65"
+thiserror = "1.0.68"
 toml = "0.8.19"
 toml_edit = "0.22.22"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

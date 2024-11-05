@@ -14,7 +14,7 @@ cargo install --locked --git https://github.com/sydhds/floccus_cli.git
 
 - Setup Floccus and setup sync with a git repository
 - Init floccus-cli config file:
-  - floccus-cli -g https://__GITHUB_TOKEN__@github.com/your_username/your_repo.git print
+  - floccus-cli -g https://github.com/your_username/your_repo.git -t __GITHUB__TOKEN_ init
 - floccus-cli print
 - floccus-cli add -b https://example.com -t "Example www site" -u after=3 --disable-push
 
@@ -40,6 +40,10 @@ cargo install --locked --git https://github.com/sydhds/floccus_cli.git
 * floccus-cli find "FOO"
 * floccus-cli find --bookmark "FOO"
 * floccus-cli find --bookmark --title "FOO"
+
+### Misc
+
+* Verbose mode: RUST_LOG=debug floccus-cli print
 
 ## Contrib
 

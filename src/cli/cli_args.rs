@@ -4,6 +4,8 @@ use std::str::FromStr;
 // third-party
 use clap::{Args, Parser, Subcommand};
 use thiserror::Error;
+use tracing::debug;
+use url::Url;
 // internal
 use crate::cli::config::FloccusCliConfig;
 
@@ -24,7 +26,7 @@ pub struct Cli {
         long = "git",
         help = "Git repository url, e.g.https://github.com/your_username/your_repo.git"
     )]
-    pub repository_url: Option<String>,
+    pub repository_url: Option<Url>,
     #[arg(
         short = 'n',
         long = "name",
@@ -32,16 +34,31 @@ pub struct Cli {
         default_value = CLI_REPOSITORY_NAME_DEFAULT
     )]
     pub repository_name: String,
+    #[arg(
+        short = 't',
+        long = "token",
+        help = "Repository token",
+    )]
+    pub repository_token: Option<String>,
+    
     #[command(subcommand)]
     pub command: Commands,
 }
 
 #[derive(Error, Debug)]
+pub enum OverrideCliError {
+    #[error("Cannot set url username")]
+    UrlSetUsernameError,
+}
+
+#[derive(Error, Debug)]
 pub enum ParseCliError {
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    TomlError(#[from] toml::de::Error),
+    Toml(#[from] toml::de::Error),
+    #[error(transparent)]
+    OverrideCli(#[from] OverrideCliError),
 }
 
 /// Parse from command line arguments and override values from config file
@@ -50,18 +67,38 @@ pub fn parse_cli_and_override(config_path: Option<PathBuf>) -> Result<Cli, Parse
     if let Some(config_path) = config_path {
         let config_str = std::fs::read_to_string(config_path)?;
         let config: FloccusCliConfig = toml::from_str(config_str.as_str())?;
-        override_cli_with(&mut cli, config);
+        override_cli_with(&mut cli, config)?;
     }
 
     Ok(cli)
 }
 
-fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) {
+fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), OverrideCliError> {
+    
     // Merge config into cli
     if config.git.enable {
+        
+        if cli.repository_token.is_none() {
+            cli.repository_token = config.git.repository_token;
+        }
+        
         if cli.repository_url.is_none() {
             cli.repository_url = config.git.repository_url;
         }
+        
+        // merge url with git token
+        if let Some(ref repository_token) = cli.repository_token {
+            let repo_url = cli.repository_url.clone();
+            if let Some(mut repo_url) = repo_url {
+                if !repository_token.is_empty() {
+                    repo_url
+                        .set_username(repository_token)
+                        .map_err(|_e| OverrideCliError::UrlSetUsernameError)?;
+                    cli.repository_url = Some(repo_url);
+                }
+            }
+        }
+        
         if cli.repository_name == CLI_REPOSITORY_NAME_DEFAULT
             && config.git.repository_name.is_some()
         {
@@ -84,6 +121,9 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) {
             }
         }
     }
+
+    debug!("cli (with config): {:?}", cli);
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]
