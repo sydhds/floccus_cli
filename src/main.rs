@@ -30,10 +30,6 @@ const FLOCCUS_CLI_ORGANIZATION: &str = "";
 const FLOCCUS_CLI_APPLICATION: &str = "Floccus-cli";
 
 const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
-[logging]
-    # Logging level -> 0: ERROR, 1: WARN, 2: INFO, 3: DEBUG, 4: TRACE
-    level = 2
-
 [git]
     enable = true
     repository_url = "https://github.com/__GITHUB_USER__/__GIT_REPO_NAME__.git"
