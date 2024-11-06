@@ -12,9 +12,9 @@ use directories::ProjectDirs;
 use git2::Repository;
 use thiserror::Error;
 use toml_edit::{value, DocumentMut, TomlError};
-use tracing::{debug, error, info};
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{debug, error, info};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use url::Url;
 // internal
 use crate::cli::{
@@ -40,7 +40,6 @@ const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
 "#;
 
 fn main() -> Result<(), Box<dyn Error>> {
-
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
@@ -48,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with(fmt::layer())
         .with(filter)
         .init();
-    
+
     let (config_path, config_path_expected): (Option<PathBuf>, PathBuf) = {
         // if FLOCCUS_CLI_CONFIG environment variable is set use it, otherwise use local config dir.
         let config_env = std::env::var(FLOCCUS_CLI_CONFIG_ENV);
@@ -173,11 +172,11 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
 
     let repository_url = cli.repository_url.as_ref().unwrap().clone();
     config_doc["git"]["repository_url"] = value(repository_url.to_string());
-    
+
     if let Some(repository_token) = cli.repository_token.as_ref() {
         config_doc["git"]["repository_token"] = value(repository_token);
     }
-    
+
     // FIXME: only for ssh url
     config_doc["git"]["repository_ssh_key"] = value(cli.repository_ssh_key.display().to_string());
 
@@ -212,7 +211,11 @@ fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn
         }
         let repository_url = cli.repository_url.as_ref().unwrap();
 
-        let repo = git_clone(repository_url, repository_folder, Some(cli.repository_ssh_key.as_path()))?;
+        let repo = git_clone(
+            repository_url,
+            repository_folder,
+            Some(cli.repository_ssh_key.as_path()),
+        )?;
         repository_need_pull = false;
         repo
     } else {

@@ -13,7 +13,10 @@ use crate::cli::config::FloccusCliConfig;
 const CLI_REPOSITORY_NAME_DEFAULT: &str = "bookmarks";
 
 static CLI_REPOSITORY_SSH_KEY_DEFAULT: LazyLock<String> = LazyLock::new(|| {
-    format!("{}/.ssh/id_ed25519", std::env::var("HOME").unwrap_or_default())
+    format!(
+        "{}/.ssh/id_ed25519",
+        std::env::var("HOME").unwrap_or_default()
+    )
 });
 
 #[derive(Debug, Clone, Parser)]
@@ -39,11 +42,7 @@ pub struct Cli {
         default_value = CLI_REPOSITORY_NAME_DEFAULT
     )]
     pub repository_name: String,
-    #[arg(
-        short = 't',
-        long = "token",
-        help = "Repository token",
-    )]
+    #[arg(short = 't', long = "token", help = "Repository token")]
     pub repository_token: Option<String>,
     #[arg(
         short = 's',
@@ -86,10 +85,8 @@ pub fn parse_cli_and_override(config_path: Option<PathBuf>) -> Result<Cli, Parse
 }
 
 fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), OverrideCliError> {
-    
     // Merge config into cli
     if config.git.enable {
-        
         if cli.repository_token.is_none() {
             cli.repository_token = config.git.repository_token;
         }
@@ -97,14 +94,14 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), Over
             if let Some(repo_ssh_key) = config.git.repository_ssh_key {
                 if repo_ssh_key != PathBuf::from("") {
                     cli.repository_ssh_key = repo_ssh_key;
-                } 
+                }
             }
         }
-        
+
         if cli.repository_url.is_none() {
             cli.repository_url = config.git.repository_url;
         }
-        
+
         // merge url with git token
         if let Some(ref repository_token) = cli.repository_token {
             let repo_url = cli.repository_url.clone();
@@ -117,7 +114,7 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), Over
                 }
             }
         }
-        
+
         if cli.repository_name == CLI_REPOSITORY_NAME_DEFAULT
             && config.git.repository_name.is_some()
         {

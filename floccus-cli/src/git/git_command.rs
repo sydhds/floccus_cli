@@ -1,9 +1,9 @@
 // std
-use std::path::{Path, PathBuf};
 use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 // third-party
 use git2::build::{CheckoutBuilder, RepoBuilder};
-use git2::{FetchOptions, Repository, Progress, RemoteCallbacks, Cred};
+use git2::{Cred, FetchOptions, Progress, RemoteCallbacks, Repository};
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -15,8 +15,11 @@ struct State {
     newline: bool,
 }
 
-pub fn git_clone(url: &Url, to_path: &Path, ssh_key: Option<&Path>) -> Result<Repository, git2::Error> {
-
+pub fn git_clone(
+    url: &Url,
+    to_path: &Path,
+    ssh_key: Option<&Path>,
+) -> Result<Repository, git2::Error> {
     let state = RefCell::new(State {
         progress: None,
         total: 0,
@@ -25,7 +28,7 @@ pub fn git_clone(url: &Url, to_path: &Path, ssh_key: Option<&Path>) -> Result<Re
         newline: false,
     });
     let mut cb = RemoteCallbacks::new();
-    
+
     if url.scheme() == "ssh" {
         if let Some(ssh_key) = ssh_key {
             cb.credentials(|_url, username_from_url, _allowed_types| {
@@ -38,7 +41,7 @@ pub fn git_clone(url: &Url, to_path: &Path, ssh_key: Option<&Path>) -> Result<Re
             });
         }
     }
-    
+
     cb.transfer_progress(|stats| {
         let mut state = state.borrow_mut();
         state.progress = Some(stats.to_owned());
