@@ -1,6 +1,7 @@
 // std
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::LazyLock;
 // third-party
 use clap::{Args, Parser, Subcommand};
 use thiserror::Error;
@@ -10,7 +11,10 @@ use url::Url;
 use crate::cli::config::FloccusCliConfig;
 
 const CLI_REPOSITORY_NAME_DEFAULT: &str = "bookmarks";
-const CLI_REPOSITORY_SSH_KEY_DEFAULT: &str = "~/.ssh/id_ed25519";
+
+static CLI_REPOSITORY_SSH_KEY_DEFAULT: LazyLock<String> = LazyLock::new(|| {
+    format!("{}/.ssh/id_ed25519", std::env::var("HOME").unwrap_or_default())
+});
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "floccus-cli")]
@@ -46,7 +50,7 @@ pub struct Cli {
         long = "ssh_key",
         help = "Repository ssh key",
         long_help = "Repository private ssh key path (e.g. ~/.ssh/id_rsa or ~/.ssh/id_ed25519) - Only for git clone with ssh url (aka git@github.com:_USERNAME_/_REPO_.git)",
-        default_value = CLI_REPOSITORY_SSH_KEY_DEFAULT,
+        default_value = &**CLI_REPOSITORY_SSH_KEY_DEFAULT,
     )]
     pub repository_ssh_key: PathBuf,
     #[command(subcommand)]
@@ -89,7 +93,7 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), Over
         if cli.repository_token.is_none() {
             cli.repository_token = config.git.repository_token;
         }
-        if cli.repository_ssh_key == PathBuf::from(CLI_REPOSITORY_SSH_KEY_DEFAULT) {
+        if cli.repository_ssh_key == PathBuf::from(&**CLI_REPOSITORY_SSH_KEY_DEFAULT) {
             if let Some(repo_ssh_key) = config.git.repository_ssh_key {
                 if repo_ssh_key != PathBuf::from("") {
                     cli.repository_ssh_key = repo_ssh_key;
