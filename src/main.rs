@@ -255,9 +255,9 @@ fn bookmark_print(
     let bookmark_file_path = repository_folder.join("bookmarks.xbel");
     let xbel = Xbel::from_file(bookmark_file_path)?;
 
-    let it = XbelNestingIterator::new(&xbel);
+    let xbel_it = XbelNestingIterator::new(&xbel);
     let mut indent_spaces = 0;
-    for item in it {
+    for item in xbel_it {
         match item {
             XbelItemOrEnd::End(_) => indent_spaces -= 2,
             XbelItemOrEnd::Item(XbelItem::Folder(f)) => {
