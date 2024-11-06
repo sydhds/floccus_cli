@@ -10,6 +10,10 @@ Limitations:
 
 cargo install --locked --git https://github.com/sydhds/floccus_cli.git
 
+## Uninstall
+
+cargo uninstall floccus-cli
+
 ## Quickstart
 
 - Setup Floccus and setup sync with a git repository
