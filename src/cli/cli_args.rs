@@ -10,6 +10,7 @@ use url::Url;
 use crate::cli::config::FloccusCliConfig;
 
 const CLI_REPOSITORY_NAME_DEFAULT: &str = "bookmarks";
+const CLI_REPOSITORY_SSH_KEY_DEFAULT: &str = "~/.ssh/id_ed25519";
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "floccus-cli")]
@@ -24,7 +25,7 @@ pub struct Cli {
     #[arg(
         short = 'g',
         long = "git",
-        help = "Git repository url, e.g.https://github.com/your_username/your_repo.git"
+        help = "Git repository url, e.g.https://github.com/_USERNAME_/_REPO_.git"
     )]
     pub repository_url: Option<Url>,
     #[arg(
@@ -40,7 +41,14 @@ pub struct Cli {
         help = "Repository token",
     )]
     pub repository_token: Option<String>,
-    
+    #[arg(
+        short = 's',
+        long = "ssh_key",
+        help = "Repository ssh key",
+        long_help = "Repository private ssh key path (e.g. ~/.ssh/id_rsa or ~/.ssh/id_ed25519) - Only for git clone with ssh url (aka git@github.com:_USERNAME_/_REPO_.git)",
+        default_value = CLI_REPOSITORY_SSH_KEY_DEFAULT,
+    )]
+    pub repository_ssh_key: PathBuf,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -48,7 +56,7 @@ pub struct Cli {
 #[derive(Error, Debug)]
 pub enum OverrideCliError {
     #[error("Cannot set url username")]
-    UrlSetUsernameError,
+    UrlSetUsername,
 }
 
 #[derive(Error, Debug)]
@@ -81,6 +89,13 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), Over
         if cli.repository_token.is_none() {
             cli.repository_token = config.git.repository_token;
         }
+        if cli.repository_ssh_key == PathBuf::from(CLI_REPOSITORY_SSH_KEY_DEFAULT) {
+            if let Some(repo_ssh_key) = config.git.repository_ssh_key {
+                if repo_ssh_key != PathBuf::from("") {
+                    cli.repository_ssh_key = repo_ssh_key;
+                } 
+            }
+        }
         
         if cli.repository_url.is_none() {
             cli.repository_url = config.git.repository_url;
@@ -93,7 +108,7 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), Over
                 if !repository_token.is_empty() {
                     repo_url
                         .set_username(repository_token)
-                        .map_err(|_e| OverrideCliError::UrlSetUsernameError)?;
+                        .map_err(|_e| OverrideCliError::UrlSetUsername)?;
                     cli.repository_url = Some(repo_url);
                 }
             }

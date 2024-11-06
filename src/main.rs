@@ -39,6 +39,7 @@ const FLOCCUS_CLI_CONFIG_SAMPLE: &str = r#"
     repository_url = "https://github.com/__GITHUB_USER__/__GIT_REPO_NAME__.git"
     repository_name = "bookmarks"
     repository_token = ""
+    repository_ssh_key = ""
     disable_push = true
 "#;
 
@@ -51,7 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with(fmt::layer())
         .with(filter)
         .init();
-
+    
     let (config_path, config_path_expected): (Option<PathBuf>, PathBuf) = {
         // if FLOCCUS_CLI_CONFIG environment variable is set use it, otherwise use local config dir.
         let config_env = std::env::var(FLOCCUS_CLI_CONFIG_ENV);
@@ -180,6 +181,9 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
     if let Some(repository_token) = cli.repository_token.as_ref() {
         config_doc["git"]["repository_token"] = value(repository_token);
     }
+    
+    // FIXME: only for ssh url
+    config_doc["git"]["repository_ssh_key"] = value(cli.repository_ssh_key.display().to_string());
 
     debug!("New config: {}", config_doc);
 
@@ -212,7 +216,7 @@ fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn
         }
         let repository_url = cli.repository_url.as_ref().unwrap();
 
-        let repo = git_clone(repository_url.as_str(), repository_folder)?;
+        let repo = git_clone(repository_url, repository_folder, Some(cli.repository_ssh_key.as_path()))?;
         repository_need_pull = false;
         repo
     } else {
