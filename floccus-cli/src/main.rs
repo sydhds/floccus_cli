@@ -1,6 +1,6 @@
 mod cli;
 mod git;
-mod xbel;
+// mod xbel;
 
 // std
 use std::borrow::Cow;
@@ -22,7 +22,7 @@ use crate::cli::{
     RemoveArgs, Under,
 };
 use crate::git::{git_clone, git_fetch, git_merge, git_push};
-use crate::xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
+use floccus_xbel::{Xbel, XbelError, XbelItem, XbelItemOrEnd, XbelNestingIterator, XbelPath};
 
 const FLOCCUS_CLI_CONFIG_ENV: &str = "FLOCCUS_CLI_CONFIG";
 const FLOCCUS_CLI_QUALIFIER: &str = "app";

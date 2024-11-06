@@ -15,7 +15,7 @@ use thiserror::Error;
 #[serde(default, rename = "lowercase")]
 pub struct Title {
     #[serde(rename = "$text")]
-    pub(crate) text: String,
+    pub text: String,
 }
 
 impl Title {
@@ -30,10 +30,10 @@ impl Title {
 #[serde(default, rename = "lowercase")]
 pub struct Bookmark {
     #[serde(rename = "@href")]
-    pub(crate) href: String,
+    pub href: String,
     #[serde(rename = "@id")]
-    pub(crate) id: String,
-    pub(crate) title: Title,
+    pub id: String,
+    pub title: Title,
 }
 
 impl Bookmark {
@@ -61,19 +61,19 @@ impl XbelItem {
 }
 
 impl XbelItem {
-    pub(crate) fn get_title(&self) -> &Title {
+    pub fn get_title(&self) -> &Title {
         match self {
             XbelItem::Folder(f) => &f.title,
             XbelItem::Bookmark(b) => &b.title,
         }
     }
-    pub(crate) fn get_id(&self) -> &String {
+    pub fn get_id(&self) -> &String {
         match self {
             XbelItem::Folder(f) => &f.id,
             XbelItem::Bookmark(b) => &b.id,
         }
     }
-    pub(crate) fn get_url(&self) -> Option<&String> {
+    pub fn get_url(&self) -> Option<&String> {
         match self {
             XbelItem::Folder(_f) => None,
             XbelItem::Bookmark(b) => Some(&b.href),
@@ -85,10 +85,10 @@ impl XbelItem {
 #[serde(default, rename = "lowercase")]
 pub struct Folder {
     #[serde(rename = "@id")]
-    pub(crate) id: String,
-    pub(crate) title: Title,
+    pub id: String,
+    pub title: Title,
     #[serde(rename = "$value")]
-    pub(crate) items: Vec<XbelItem>,
+    pub items: Vec<XbelItem>,
 }
 
 impl Folder {
@@ -149,7 +149,7 @@ impl Xbel {
         })
     }
 
-    pub(crate) fn get_items_mut(&mut self, path: &XbelPath) -> Option<(usize, &mut Vec<XbelItem>)> {
+    pub fn get_items_mut(&mut self, path: &XbelPath) -> Option<(usize, &mut Vec<XbelItem>)> {
         match path {
             XbelPath::Root => Some((0, &mut self.items)),
             XbelPath::Id(id) => {
@@ -398,7 +398,7 @@ pub struct XbelNestingIterator<'s> {
 }
 
 impl<'s> XbelNestingIterator<'s> {
-    pub(crate) fn new(xbel: &'s Xbel) -> Self {
+    pub fn new(xbel: &'s Xbel) -> Self {
         Self {
             xbel,
             initial: true,
@@ -734,7 +734,7 @@ mod tests {
         let buffer = xbel.write_to_string();
         // println!("buffer:");
         // println!("{}", buffer);
-        let bank_v1 = std::fs::read_to_string("ressources/bookmarks_bank_v1.xbel").unwrap();
+        let bank_v1 = std::fs::read_to_string("../ressources/bookmarks_bank_v1.xbel").unwrap();
         assert_eq!(buffer, bank_v1);
 
         /*

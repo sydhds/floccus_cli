@@ -325,7 +325,7 @@ mod tests {
             "--disable-push",
         ]);
         let config: FloccusCliConfig = toml::from_str(CONFIG_1).unwrap();
-        override_cli_with(&mut cli, config);
+        override_cli_with(&mut cli, config).unwrap();
 
         if let Commands::Rm(rm_args) = cli.command {
             // Note: disable-push is set to false in config and then override by command line
