@@ -9,6 +9,6 @@ serde = { version = "1.0", features = ["derive"] }
 git2 = "0.19"
 quick-xml = {  version = "0.36", features = ["serde", "serialize"] }
 directories = "5.0"
-thiserror = "1.0"
+thiserror = "2.0"
 toml = "0.8.19"
 toml_edit = "0.22.22"
