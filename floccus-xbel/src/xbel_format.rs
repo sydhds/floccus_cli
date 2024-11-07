@@ -221,7 +221,7 @@ impl Xbel {
         }
     }
 
-    pub(crate) fn write_to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         // Note:
         // TODO: quick_xml limitations/bugs
 
@@ -278,7 +278,7 @@ impl Xbel {
             .write(true)
             .truncate(true)
             .open(file_path)?;
-        let buffer = self.write_to_string();
+        let buffer = self.to_string();
         f.write_all(buffer.as_bytes())?;
         Ok(())
     }
@@ -731,7 +731,7 @@ mod tests {
 
         let xbel = Xbel::new(Some(vec![folder_i1]));
 
-        let buffer = xbel.write_to_string();
+        let buffer = xbel.to_string();
         // println!("buffer:");
         // println!("{}", buffer);
         let bank_v1 = std::fs::read_to_string("../ressources/bookmarks_bank_v1.xbel").unwrap();

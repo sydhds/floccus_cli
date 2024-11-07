@@ -3,6 +3,7 @@ mod git;
 // mod xbel;
 
 // std
+use anyhow::Context;
 use std::borrow::Cow;
 use std::error::Error;
 use std::io::Write;
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 // third-party
 use directories::ProjectDirs;
 use git2::Repository;
+use tempfile::{NamedTempFile, PathPersistError};
 use thiserror::Error;
 use toml_edit::{value, DocumentMut, TomlError};
 use tracing::level_filters::LevelFilter;
@@ -98,6 +100,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     info!("repository_folder: {}", repository_folder.display());
 
+    let cache_folder_ = ProjectDirs::from(
+        FLOCCUS_CLI_QUALIFIER,
+        FLOCCUS_CLI_ORGANIZATION,
+        FLOCCUS_CLI_APPLICATION,
+    )
+    .ok_or("Cannot determine cache folder")?;
+    let cache_folder = cache_folder_.cache_dir();
+
+    if !cache_folder.exists() {
+        debug!("Creating cache folder: {:?}", cache_folder);
+        std::fs::create_dir_all(cache_folder)?;
+    }
+
     match &cli.command {
         Commands::Init(init_args) => {
             let res = init_app(&cli, init_args, config_path_expected.as_path());
@@ -154,6 +169,8 @@ enum InitError {
     IoError(#[from] std::io::Error),
     #[error("Unable to get parents for: {0}")]
     NoParent(PathBuf),
+    #[error(transparent)]
+    WriteError(#[from] AtomicWriteError),
 }
 
 fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), InitError> {
@@ -187,12 +204,8 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
         .ok_or(InitError::NoParent(config_path.to_path_buf()))?;
     std::fs::create_dir_all(config_path_parent)?;
 
-    let mut f = std::fs::File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(config_path)?;
-    f.write_all(config_doc.to_string().as_bytes())?;
+    // Write to tmp file then persist file
+    atomic_write(config_path, config_doc.to_string())?;
 
     info!("Successfully written config file path: {:?}", config_path);
 
@@ -242,17 +255,20 @@ fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn
     Ok(repo)
 }
 
-fn bookmark_print(
-    _print_args: &PrintArgs,
-    repository_folder: PathBuf,
-) -> Result<(), Box<dyn Error>> {
+fn bookmark_print(_print_args: &PrintArgs, repository_folder: PathBuf) -> anyhow::Result<()> {
     const FOLDER_EMOTICON: &str = "\u{1F4C1}";
     const _FOLDER_LINK: &str = "\u{1F310}";
     const FOLDER_LINK1: &str = "\u{1F517}";
     const INDENTER: fn(usize) -> String = |indent_spaces| " ".repeat(indent_spaces);
 
     let bookmark_file_path = repository_folder.join("bookmarks.xbel");
-    let xbel = Xbel::from_file(bookmark_file_path)?;
+    let bookmark_file_path_clone = bookmark_file_path.clone();
+    let xbel = Xbel::from_file(bookmark_file_path).with_context(|| {
+        format!(
+            "Error while parsing: {}",
+            bookmark_file_path_clone.to_string_lossy()
+        )
+    })?;
 
     let xbel_it = XbelNestingIterator::new(&xbel);
     let mut indent_spaces = 0;
@@ -302,6 +318,8 @@ enum BookmarkAddError {
     // TODO: remap error GitAddError, GitCommitError ...
     #[error(transparent)]
     GitError(#[from] git2::Error),
+    #[error(transparent)]
+    WriteError(#[from] AtomicWriteError),
 }
 
 fn bookmark_add(
@@ -371,7 +389,7 @@ fn bookmark_add(
 
     debug!("xbel: {:?}", xbel);
     // Write to file locally
-    xbel.to_file(bookmark_file_path)?;
+    atomic_write(bookmark_file_path.as_path(), xbel.to_string())?;
 
     if add_args.disable_push == Some(false) {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
@@ -391,6 +409,8 @@ enum BookmarkRemoveError {
     // // TODO: remap error GitAddError, GitCommitError ...
     #[error(transparent)]
     GitError(#[from] git2::Error),
+    #[error(transparent)]
+    WriteError(#[from] AtomicWriteError),
 }
 
 fn bookmark_rm(
@@ -455,7 +475,7 @@ fn bookmark_rm(
     }
 
     // Write to file locally
-    xbel.to_file(bookmark_file_path)?;
+    atomic_write(bookmark_file_path.as_path(), xbel.to_string())?;
 
     if rm_args.disable_push == Some(false) {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
@@ -576,4 +596,37 @@ fn pluralize(s: &str, count: usize) -> Cow<'_, str> {
         0 | 1 => Cow::Borrowed(s),
         _ => Cow::Owned(format!("{}s", s)),
     }
+}
+
+#[derive(Error, Debug)]
+enum AtomicWriteError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    PathPersist(#[from] PathPersistError),
+    #[error("Cannot determine local cache folder for temp files")]
+    TmpFolderError,
+}
+
+fn atomic_write(file_path: &Path, content: String) -> Result<(), AtomicWriteError> {
+    let mut tmp_file = if cfg!(target_os = "linux") {
+        // Avoid linux error like:
+        // failed to persist temporary file: Invalid cross-device link
+        NamedTempFile::new_in(
+            ProjectDirs::from(
+                FLOCCUS_CLI_QUALIFIER,
+                FLOCCUS_CLI_ORGANIZATION,
+                FLOCCUS_CLI_APPLICATION,
+            )
+            .ok_or(AtomicWriteError::TmpFolderError)?
+            .cache_dir(),
+        )
+    } else {
+        NamedTempFile::new()
+    }?;
+
+    write!(tmp_file, "{}", content)?;
+    let path = tmp_file.into_temp_path();
+    path.persist_noclobber(file_path)?;
+    Ok(())
 }

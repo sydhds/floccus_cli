@@ -17,8 +17,10 @@ url = { version = "2.5.3", features = ["serde"] }
 quick-xml = {  version = "0.37.0", features = ["serde", "serialize"] }
 directories = "5.0.1"
 thiserror = "2.0.0"
+anyhow = "1.0.93"
 toml = "0.8.19"
 toml_edit = "0.22.22"
+tempfile = "3.13.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
 tracing-test = "0.2.5"
