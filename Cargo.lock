@@ -198,6 +198,7 @@ dependencies = [
  "directories",
  "floccus-xbel",
  "git2",
+ "regex",
  "serde",
  "tempfile",
  "thiserror 2.0.0",

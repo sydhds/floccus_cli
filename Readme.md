@@ -18,11 +18,12 @@ cargo uninstall floccus-cli
 
 - Setup Floccus and setup sync with a git repository
 - Init floccus-cli config file:
-  - floccus-cli -g https://github.com/your_username/your_repo.git -t __GITHUB__TOKEN_ init
+  - Using git https url + token (with write access): 
+    - floccus-cli -g https://github.com/_USERNAME_/_REPO_NAME_.git -t __GITHUB__TOKEN_ init
+  - Using git ssh url:
+    - floccus-cli -g ssh://git@github.com/_USERNAME_/_REPO_NAME_.git init
 - floccus-cli print
-- floccus-cli add -b https://example.com -t "Example www site" -u after=3 --disable-push
-
-## Documentation
+- floccus-cli add -b https://example.com -t "Example www site" -u after=3
 
 ### Add 
 

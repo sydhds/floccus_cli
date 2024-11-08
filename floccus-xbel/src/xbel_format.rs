@@ -288,7 +288,7 @@ impl Xbel {
 pub enum XbelError {
     #[error("Error while reading Xbel file: {0}")]
     IoError(#[from] std::io::Error),
-    #[error("Cannot read Xbel file: {0}")]
+    #[error("Cannot parse Xbel file: {0}")]
     XbelReadError(#[from] quick_xml::de::DeError),
 }
 

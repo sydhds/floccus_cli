@@ -1,9 +1,11 @@
+use std::error::Error;
 // std
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::LazyLock;
 // third-party
 use clap::{Args, Parser, Subcommand};
+use regex::Regex;
 use thiserror::Error;
 use tracing::debug;
 use url::Url;
@@ -21,7 +23,7 @@ static CLI_REPOSITORY_SSH_KEY_DEFAULT: LazyLock<String> = LazyLock::new(|| {
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "floccus-cli")]
-#[command(version, about = "A cli tool compatible with Floccus", long_about = None)]
+#[command(version, about = "A cli tool compatible with Floccus (www.floccus.org)", long_about = None)]
 pub struct Cli {
     #[arg(
         short = 'r',
@@ -32,7 +34,8 @@ pub struct Cli {
     #[arg(
         short = 'g',
         long = "git",
-        help = "Git repository url, e.g.https://github.com/_USERNAME_/_REPO_.git"
+        help = "Git repository url, e.g.https://github.com/_USERNAME_/_REPO_.git",
+        value_parser=url_parser
     )]
     pub repository_url: Option<Url>,
     #[arg(
@@ -54,6 +57,21 @@ pub struct Cli {
     pub repository_ssh_key: PathBuf,
     #[command(subcommand)]
     pub command: Commands,
+}
+
+fn url_parser(s: &str) -> Result<Url, String> {
+
+    // Note:
+    // User can copy GitHub (or Gitlab) url like: git@github.com:_USERNAME_/_REPO_NAME_.git
+    // But url crate requires a valid url with scheme
+    let re = Regex::new(r"git@[\w._-]+:[\w_-]+/[\w_-]+.git").unwrap();
+    if re.is_match(s) {
+        return Err(format!(
+            "Url should be like: 'ssh://git@github.com/_USERNAME_/_REPO_NAME_.git' and not: {}", s
+        ));
+    }
+    
+    Url::parse(s).map_err(|e| format!("Cannot parse url: {}", e))
 }
 
 #[derive(Error, Debug)]

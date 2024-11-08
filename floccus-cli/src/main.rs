@@ -3,7 +3,7 @@ mod git;
 // mod xbel;
 
 // std
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use std::borrow::Cow;
 use std::error::Error;
 use std::io::Write;
@@ -224,6 +224,7 @@ fn setup_repo(cli: &Cli, repository_folder: &Path) -> Result<Repository, Box<dyn
         }
         let repository_url = cli.repository_url.as_ref().unwrap();
 
+        info!("Cloning repository: {}", repository_url);
         let repo = git_clone(
             repository_url,
             repository_folder,
@@ -320,6 +321,8 @@ enum BookmarkAddError {
     GitError(#[from] git2::Error),
     #[error(transparent)]
     WriteError(#[from] AtomicWriteError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error)
 }
 
 fn bookmark_add(
@@ -335,7 +338,9 @@ fn bookmark_add(
     // Read xbel
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
-    let mut xbel = Xbel::from_file(&bookmark_file_path)?;
+    let bookmark_file_path_clone = bookmark_file_path.clone();
+    let mut xbel = Xbel::from_file(&bookmark_file_path)
+        .with_context(|| format!("Error while reading: {:?}", bookmark_file_path_clone))?;
 
     // Build the bookmark
     let bookmark = xbel.new_bookmark(add_args.url.as_str(), add_args.title.as_str());
@@ -411,6 +416,8 @@ enum BookmarkRemoveError {
     GitError(#[from] git2::Error),
     #[error(transparent)]
     WriteError(#[from] AtomicWriteError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error)
 }
 
 fn bookmark_rm(
@@ -426,7 +433,9 @@ fn bookmark_rm(
     // Read xbel file
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
-    let mut xbel = Xbel::from_file(&bookmark_file_path)?;
+    // let bookmark_file_path_clone = bookmark_file_path.clone();
+    let mut xbel = Xbel::from_file(&bookmark_file_path)
+        .with_context(|| format!("Error while reading: {:?}", bookmark_file_path))?;
 
     // Find where to put the bookmark
     let xbel_path = XbelPath::from(&rm_args.under);
