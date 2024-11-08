@@ -205,7 +205,7 @@ fn init_app(cli: &Cli, _init_args: &InitArgs, config_path: &Path) -> Result<(), 
     std::fs::create_dir_all(config_path_parent)?;
 
     // Write to tmp file then persist file
-    atomic_write(config_path, config_doc.to_string())?;
+    atomic_write(config_path, config_doc.to_string(), true)?;
 
     info!("Successfully written config file path: {:?}", config_path);
 
@@ -394,7 +394,7 @@ fn bookmark_add(
 
     debug!("xbel: {:?}", xbel);
     // Write to file locally
-    atomic_write(bookmark_file_path.as_path(), xbel.to_string())?;
+    atomic_write(bookmark_file_path.as_path(), xbel.to_string(), false)?;
 
     if add_args.disable_push == Some(false) {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
@@ -462,6 +462,7 @@ fn bookmark_rm(
                     }
                 }
             } else {
+                info!("Removing: {:?}", items.get(item_index));
                 items.remove(item_index);
             }
         }
@@ -469,22 +470,21 @@ fn bookmark_rm(
             if rm_args.dry_run {
                 match &items[item_index] {
                     XbelItem::Folder(f) => {
-                        // TODO: print all children or just print the children count (recursive)
-                        println!("[Dry run] removing folder: {:?}", f);
+                        println!("[Dry run] removing folder: {:?} with {} children", f.title, f.items.len());
                     }
                     XbelItem::Bookmark(b) => {
                         println!("[Dry run] removing bookmark: {:?}", b);
                     }
                 }
             } else {
-                // TODO: print
+                info!("Removing: {:?}", items.get(item_index));
                 items.remove(item_index);
             }
         }
     }
 
     // Write to file locally
-    atomic_write(bookmark_file_path.as_path(), xbel.to_string())?;
+    atomic_write(bookmark_file_path.as_path(), xbel.to_string(), false)?;
 
     if rm_args.disable_push == Some(false) {
         git_push(repo, bookmark_file_path_xbel.as_path())?;
@@ -617,7 +617,7 @@ enum AtomicWriteError {
     TmpFolderError,
 }
 
-fn atomic_write(file_path: &Path, content: String) -> Result<(), AtomicWriteError> {
+fn atomic_write(file_path: &Path, content: String, no_clobber: bool) -> Result<(), AtomicWriteError> {
     let mut tmp_file = if cfg!(target_os = "linux") {
         // Avoid linux error like:
         // failed to persist temporary file: Invalid cross-device link
@@ -636,6 +636,11 @@ fn atomic_write(file_path: &Path, content: String) -> Result<(), AtomicWriteErro
 
     write!(tmp_file, "{}", content)?;
     let path = tmp_file.into_temp_path();
-    path.persist_noclobber(file_path)?;
+
+    if no_clobber {
+        path.persist_noclobber(file_path)?;
+    } else {
+        path.persist(file_path)?;
+    }
     Ok(())
 }
