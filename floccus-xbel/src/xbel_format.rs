@@ -232,7 +232,11 @@ impl Xbel {
         }
     }
 
-    /// Serialize to string - compatible with Floccus xbel
+    /// Serialize to string
+    /// 
+    /// This is the recommended way to serialize a Xbel that will be compatible with Floccus. Using 
+    /// the derive implementation should result in a valid xml file but missing some information 
+    /// and proper indentation.
     pub fn to_string(&self) -> String {
         // Note:
         // quick_xml 0.37 (when using the derive feature) can serialize comment (for highest_id)
