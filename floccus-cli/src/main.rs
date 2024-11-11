@@ -264,7 +264,7 @@ fn bookmark_print(_print_args: &PrintArgs, repository_folder: PathBuf) -> anyhow
 
     let bookmark_file_path = repository_folder.join("bookmarks.xbel");
     let bookmark_file_path_clone = bookmark_file_path.clone();
-    let xbel = Xbel::from_file(bookmark_file_path).with_context(|| {
+    let xbel = Xbel::try_from_file(bookmark_file_path).with_context(|| {
         format!(
             "Error while parsing: {}",
             bookmark_file_path_clone.to_string_lossy()
@@ -339,7 +339,7 @@ fn bookmark_add(
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
     let bookmark_file_path_clone = bookmark_file_path.clone();
-    let mut xbel = Xbel::from_file(&bookmark_file_path)
+    let mut xbel = Xbel::try_from_file(&bookmark_file_path)
         .with_context(|| format!("Error while reading: {:?}", bookmark_file_path_clone))?;
 
     // Build the bookmark
@@ -434,7 +434,7 @@ fn bookmark_rm(
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
     // let bookmark_file_path_clone = bookmark_file_path.clone();
-    let mut xbel = Xbel::from_file(&bookmark_file_path)
+    let mut xbel = Xbel::try_from_file(&bookmark_file_path)
         .with_context(|| format!("Error while reading: {:?}", bookmark_file_path))?;
 
     // Find where to put the bookmark
@@ -534,7 +534,7 @@ fn bookmark_find(
     // Read xbel file
     let bookmark_file_path_xbel = PathBuf::from("bookmarks.xbel");
     let bookmark_file_path = repository_folder.join(bookmark_file_path_xbel.as_path());
-    let xbel = Xbel::from_file(&bookmark_file_path)?;
+    let xbel = Xbel::try_from_file(&bookmark_file_path)?;
 
     let found_in_title = |item: &XbelItem, to_match: &str| item.get_title().text.contains(to_match);
     let found_in_url = |item: &XbelItem, to_match: &str| {

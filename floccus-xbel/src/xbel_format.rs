@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 // internal
 
+/// The title of a `Bookmark` or `Folder`
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
 pub struct Title {
@@ -26,6 +27,7 @@ impl Title {
     }
 }
 
+/// A Bookmark aka a `Title` and usually a www url
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
 pub struct Bookmark {
@@ -46,6 +48,7 @@ impl Bookmark {
     }
 }
 
+/// An enum that is either a `Folder` or a `Bookmark`. See `XbelIterator` or `XbelNestingIterator`.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum XbelItem {
     #[serde(rename = "folder")]
@@ -61,18 +64,22 @@ impl XbelItem {
 }
 
 impl XbelItem {
+    /// Get title of Bookmark or Folder
     pub fn get_title(&self) -> &Title {
         match self {
             XbelItem::Folder(f) => &f.title,
             XbelItem::Bookmark(b) => &b.title,
         }
     }
+    /// Get id of Bookmark or Folder
     pub fn get_id(&self) -> &String {
         match self {
             XbelItem::Folder(f) => &f.id,
             XbelItem::Bookmark(b) => &b.id,
         }
     }
+    
+    /// Get the url of a Bookmark or None if it's a Folder 
     pub fn get_url(&self) -> Option<&String> {
         match self {
             XbelItem::Folder(_f) => None,
@@ -81,6 +88,7 @@ impl XbelItem {
     }
 }
 
+/// A Folder that contains folders and bookmarks
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
 pub struct Folder {
@@ -102,6 +110,7 @@ impl Folder {
     }
 }
 
+/// A struct to search inside a `Xbel` struct
 #[derive(Debug, Clone)]
 pub enum XbelPath {
     Root,
@@ -119,7 +128,7 @@ impl Display for XbelPath {
     }
 }
 
-// XBEL: XMLBookmarkExchangeLanguage
+/// Struct resulting from parsing a Xbel file
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "xbel")]
 pub struct Xbel {
@@ -139,6 +148,7 @@ impl Xbel {
     }
 
     pub(crate) fn get_highest_id(&self) -> u64 {
+        
         let it = XbelIterator::new(self);
         it.fold(0, |mut acc, x| {
             let id = x.get_id().parse::<u64>().unwrap();
@@ -149,6 +159,7 @@ impl Xbel {
         })
     }
 
+    /// Returns the mutable list of XbelItem containing the searched item (`XbelPath`)
     pub fn get_items_mut(&mut self, path: &XbelPath) -> Option<(usize, &mut Vec<XbelItem>)> {
         match path {
             XbelPath::Root => Some((0, &mut self.items)),
@@ -221,10 +232,11 @@ impl Xbel {
         }
     }
 
+    /// Serialize to string - compatible with Floccus xbel
     pub fn to_string(&self) -> String {
         // Note:
-        // TODO: quick_xml limitations/bugs
-
+        // quick_xml 0.37 (when using the derive feature) can serialize comment (for highest_id)
+        
         let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
         let comment = format!(
             "- highestId :{}: for Floccus bookmark sync browser extension ",
@@ -261,19 +273,22 @@ impl Xbel {
         result
     }
 
+    /// Create a new bookmark for this Xbel using the correct id (highest id + 1).
     pub fn new_bookmark(&self, url: &str, title: &str) -> XbelItem {
         let highest_id = self.get_highest_id();
 
         XbelItem::new_bookmark((highest_id + 1).to_string().as_str(), url, title)
     }
-
-    pub fn from_file<T: AsRef<Path>>(path: T) -> Result<Xbel, XbelError> {
+    
+    /// Parse a file into a Xbel
+    pub fn try_from_file<T: AsRef<Path>>(path: T) -> Result<Xbel, XbelError> {
         let xbel_ = std::fs::File::open(path)?;
         let xbel: Xbel = from_reader(BufReader::new(xbel_))?;
         Ok(xbel)
     }
 
-    pub fn to_file<T: AsRef<Path>>(&self, file_path: T) -> Result<(), XbelError> {
+    /// Write Xbel to a file
+    pub fn try_to_file<T: AsRef<Path>>(&self, file_path: T) -> Result<(), XbelError> {
         let mut f = std::fs::File::options()
             .write(true)
             .truncate(true)
@@ -348,6 +363,7 @@ impl<'a> IntoIterator for &'a Xbel {
     }
 }
 
+/// A DFS Iterator for Xbel
 pub struct XbelIterator<'s> {
     xbel: &'s Xbel,
     initial: bool,
@@ -384,6 +400,7 @@ impl<'a> Iterator for XbelIterator<'a> {
     }
 }
 
+/// Either a `XbelItem` or the end of a Folder
 #[derive(Debug)]
 pub enum XbelItemOrEnd<'s> {
     Item(&'s XbelItem),
@@ -391,6 +408,7 @@ pub enum XbelItemOrEnd<'s> {
     End(String), // id
 }
 
+/// A DFS Iterator for Xbel (but with nesting information)
 pub struct XbelNestingIterator<'s> {
     xbel: &'s Xbel,
     initial: bool,
@@ -691,26 +709,6 @@ mod tests {
     #[test]
     #[traced_test]
     fn write_xbel() -> Result<(), quick_xml::errors::serialize::DeError> {
-        /*
-        let url_e = "www.ecosia.org";
-        let bookmark_e = XbelItem::Bookmark(
-            Bookmark::new("1", url_e, "My main search engine")
-        );
-        let url_g = "www.google.com";
-        let title_g = "A good search engine";
-        let bookmark_g = XbelItem::Bookmark(
-            Bookmark::new("4", url_g, title_g)
-        );
-        let url_b = "www.bing.com";
-        let bookmark_b = XbelItem::Bookmark(
-            Bookmark::new("5", url_b, "Another good search engine")
-        );
-
-        let folder_a = XbelItem::Folder(Folder::new("2", "Search engines", Some(vec![
-            bookmark_g,
-            bookmark_b
-        ])));
-        */
 
         let bookmark_b1 = XbelItem::Bookmark(Bookmark::new(
             "3",

@@ -59,10 +59,10 @@ pub fn git_clone(
         // print(&mut *state);
     });
 
-    let mut fo = FetchOptions::new();
-    fo.remote_callbacks(cb);
+    let mut fetch_opts = FetchOptions::new();
+    fetch_opts.remote_callbacks(cb);
     let repo = RepoBuilder::new()
-        .fetch_options(fo)
+        .fetch_options(fetch_opts)
         .with_checkout(co)
         .clone(url.to_string().as_str(), to_path)?;
 
@@ -99,14 +99,14 @@ pub fn git_fetch<'a>(
     });
     */
 
-    let mut fo = git2::FetchOptions::new();
-    // fo.remote_callbacks(cb);
+    let mut fetch_opts = git2::FetchOptions::new();
+    // fetch_opts.remote_callbacks(cb);
 
     // Always fetch all tags.
     // Perform a download and also update tips
-    fo.download_tags(git2::AutotagOption::All);
+    fetch_opts.download_tags(git2::AutotagOption::All);
     debug!("Fetching {} for repo", remote.name().unwrap());
-    remote.fetch(refs, Some(&mut fo), None)?;
+    remote.fetch(refs, Some(&mut fetch_opts), None)?;
 
     // If there are local objects (we got a thin pack), then tell the user
     // how many objects we saved from having to cross the network.

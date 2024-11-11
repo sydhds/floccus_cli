@@ -54,6 +54,10 @@ cargo uninstall floccus-cli
 
 All contributions, code, feedback and strategic advice, are welcome. If you have a question you can open an issue on the repository. 
 
+### For Dev
+
+* cargo doc --lib -p floccus-xbel
+
 ## License
 
 MPL-2.0 (see [LICENSE](./LICENSE))
