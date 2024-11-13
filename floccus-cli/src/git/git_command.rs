@@ -12,7 +12,7 @@ struct State {
     total: usize,
     current: usize,
     path: Option<PathBuf>,
-    newline: bool,
+    // newline: bool,
 }
 
 pub fn git_clone(
@@ -25,7 +25,7 @@ pub fn git_clone(
         total: 0,
         current: 0,
         path: None,
-        newline: false,
+        // newline: false,
     });
     let mut cb = RemoteCallbacks::new();
 

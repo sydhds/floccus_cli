@@ -1,4 +1,3 @@
-use std::error::Error;
 // std
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -60,17 +59,17 @@ pub struct Cli {
 }
 
 fn url_parser(s: &str) -> Result<Url, String> {
-
     // Note:
     // User can copy GitHub (or Gitlab) url like: git@github.com:_USERNAME_/_REPO_NAME_.git
     // But url crate requires a valid url with scheme
     let re = Regex::new(r"git@[\w._-]+:[\w_-]+/[\w_-]+.git").unwrap();
     if re.is_match(s) {
         return Err(format!(
-            "Url should be like: 'ssh://git@github.com/_USERNAME_/_REPO_NAME_.git' and not: {}", s
+            "Url should be like: 'ssh://git@github.com/_USERNAME_/_REPO_NAME_.git' and not: {}",
+            s
         ));
     }
-    
+
     Url::parse(s).map_err(|e| format!("Cannot parse url: {}", e))
 }
 

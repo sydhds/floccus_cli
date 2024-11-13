@@ -3,7 +3,7 @@ mod git;
 // mod xbel;
 
 // std
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use std::borrow::Cow;
 use std::error::Error;
 use std::io::Write;
@@ -322,7 +322,7 @@ enum BookmarkAddError {
     #[error(transparent)]
     WriteError(#[from] AtomicWriteError),
     #[error(transparent)]
-    Other(#[from] anyhow::Error)
+    Other(#[from] anyhow::Error),
 }
 
 fn bookmark_add(
@@ -417,7 +417,7 @@ enum BookmarkRemoveError {
     #[error(transparent)]
     WriteError(#[from] AtomicWriteError),
     #[error(transparent)]
-    Other(#[from] anyhow::Error)
+    Other(#[from] anyhow::Error),
 }
 
 fn bookmark_rm(
@@ -470,7 +470,11 @@ fn bookmark_rm(
             if rm_args.dry_run {
                 match &items[item_index] {
                     XbelItem::Folder(f) => {
-                        println!("[Dry run] removing folder: {:?} with {} children", f.title, f.items.len());
+                        println!(
+                            "[Dry run] removing folder: {:?} with {} children",
+                            f.title,
+                            f.items.len()
+                        );
                     }
                     XbelItem::Bookmark(b) => {
                         println!("[Dry run] removing bookmark: {:?}", b);
@@ -617,7 +621,11 @@ enum AtomicWriteError {
     TmpFolderError,
 }
 
-fn atomic_write(file_path: &Path, content: String, no_clobber: bool) -> Result<(), AtomicWriteError> {
+fn atomic_write(
+    file_path: &Path,
+    content: String,
+    no_clobber: bool,
+) -> Result<(), AtomicWriteError> {
     let mut tmp_file = if cfg!(target_os = "linux") {
         // Avoid linux error like:
         // failed to persist temporary file: Invalid cross-device link

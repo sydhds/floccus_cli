@@ -78,8 +78,8 @@ impl XbelItem {
             XbelItem::Bookmark(b) => &b.id,
         }
     }
-    
-    /// Get the url of a Bookmark or None if it's a Folder 
+
+    /// Get the url of a Bookmark or None if it's a Folder
     pub fn get_url(&self) -> Option<&String> {
         match self {
             XbelItem::Folder(_f) => None,
@@ -148,7 +148,6 @@ impl Xbel {
     }
 
     pub(crate) fn get_highest_id(&self) -> u64 {
-        
         let it = XbelIterator::new(self);
         it.fold(0, |mut acc, x| {
             let id = x.get_id().parse::<u64>().unwrap();
@@ -232,15 +231,16 @@ impl Xbel {
         }
     }
 
+    #[allow(clippy::inherent_to_string)]
     /// Serialize to string
-    /// 
-    /// This is the recommended way to serialize a Xbel that will be compatible with Floccus. Using 
-    /// the derive implementation should result in a valid xml file but missing some information 
+    ///
+    /// This is the recommended way to serialize a Xbel that will be compatible with Floccus. Using
+    /// the derive implementation should result in a valid xml file but missing some information
     /// and proper indentation.
     pub fn to_string(&self) -> String {
         // Note:
         // quick_xml 0.37 (when using the derive feature) can serialize comment (for highest_id)
-        
+
         let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
         let comment = format!(
             "- highestId :{}: for Floccus bookmark sync browser extension ",
@@ -283,7 +283,7 @@ impl Xbel {
 
         XbelItem::new_bookmark((highest_id + 1).to_string().as_str(), url, title)
     }
-    
+
     /// Parse a file into a Xbel
     pub fn try_from_file<T: AsRef<Path>>(path: T) -> Result<Xbel, XbelError> {
         let xbel_ = std::fs::File::open(path)?;
@@ -713,7 +713,6 @@ mod tests {
     #[test]
     #[traced_test]
     fn write_xbel() -> Result<(), quick_xml::errors::serialize::DeError> {
-
         let bookmark_b1 = XbelItem::Bookmark(Bookmark::new(
             "3",
             "https://www.bank1.com/",
