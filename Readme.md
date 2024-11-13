@@ -3,8 +3,7 @@
 A cli tool (written in [Rust](https://www.rust-lang.org)) for [Floccus](www.floccus.org)
 
 Limitations:
-* Sync is only git ([create an issue for other backend](https://github.com/sydhds/floccus_cli/issues/new/choose))
-* [Git ssh url not supported](https://github.com/sydhds/floccus_cli/issues/5)
+* Sync backend: git ([create an issue for other backend](https://github.com/sydhds/floccus_cli/issues/new/choose))
 
 ## Install
 
