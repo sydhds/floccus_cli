@@ -1,0 +1,23 @@
+[package]
+name = "floccus-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = {workspace = true}
+serde = {workspace = true}
+git2 = {workspace = true}
+url = {workspace = true}
+directories = {workspace = true}
+thiserror = {workspace = true}
+anyhow = {workspace = true}
+toml = {workspace = true}
+toml_edit = {workspace = true}
+tempfile = {workspace = true}
+regex = {workspace = true}
+tracing-subscriber = {workspace = true}
+tracing = {workspace = true}
+floccus-xbel = {path = "../floccus-xbel"}
+
+[dev-dependencies]
+tracing-test = {workspace = true}

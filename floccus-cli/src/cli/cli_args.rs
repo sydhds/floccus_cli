@@ -1,17 +1,28 @@
 // std
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::LazyLock;
 // third-party
 use clap::{Args, Parser, Subcommand};
+use regex::Regex;
 use thiserror::Error;
+use tracing::debug;
+use url::Url;
 // internal
 use crate::cli::config::FloccusCliConfig;
 
 const CLI_REPOSITORY_NAME_DEFAULT: &str = "bookmarks";
 
+static CLI_REPOSITORY_SSH_KEY_DEFAULT: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{}/.ssh/id_ed25519",
+        std::env::var("HOME").unwrap_or_default()
+    )
+});
+
 #[derive(Debug, Clone, Parser)]
-#[command(name = "clap-subcommand")]
-#[command(about = "Clap subcommand example", long_about = None)]
+#[command(name = "floccus-cli")]
+#[command(version, about = "A cli tool compatible with Floccus (www.floccus.org)", long_about = None)]
 pub struct Cli {
     #[arg(
         short = 'r',
@@ -22,9 +33,10 @@ pub struct Cli {
     #[arg(
         short = 'g',
         long = "git",
-        help = "Git repository url, e.g.https://github.com/your_username/your_repo.git"
+        help = "Git repository url, e.g.https://github.com/_USERNAME_/_REPO_.git",
+        value_parser=url_parser
     )]
-    pub repository_url: Option<String>,
+    pub repository_url: Option<Url>,
     #[arg(
         short = 'n',
         long = "name",
@@ -32,16 +44,49 @@ pub struct Cli {
         default_value = CLI_REPOSITORY_NAME_DEFAULT
     )]
     pub repository_name: String,
+    #[arg(short = 't', long = "token", help = "Repository token")]
+    pub repository_token: Option<String>,
+    #[arg(
+        short = 's',
+        long = "ssh_key",
+        help = "Repository ssh key",
+        long_help = "Repository private ssh key path (e.g. ~/.ssh/id_rsa or ~/.ssh/id_ed25519) - Only for git clone with ssh url (aka git@github.com:_USERNAME_/_REPO_.git)",
+        default_value = &**CLI_REPOSITORY_SSH_KEY_DEFAULT,
+    )]
+    pub repository_ssh_key: PathBuf,
     #[command(subcommand)]
     pub command: Commands,
+}
+
+fn url_parser(s: &str) -> Result<Url, String> {
+    // Note:
+    // User can copy GitHub (or Gitlab) url like: git@github.com:_USERNAME_/_REPO_NAME_.git
+    // But url crate requires a valid url with scheme
+    let re = Regex::new(r"git@[\w._-]+:[\w_-]+/[\w_-]+.git").unwrap();
+    if re.is_match(s) {
+        return Err(format!(
+            "Url should be like: 'ssh://git@github.com/_USERNAME_/_REPO_NAME_.git' and not: {}",
+            s
+        ));
+    }
+
+    Url::parse(s).map_err(|e| format!("Cannot parse url: {}", e))
+}
+
+#[derive(Error, Debug)]
+pub enum OverrideCliError {
+    #[error("Cannot set url username")]
+    UrlSetUsername,
 }
 
 #[derive(Error, Debug)]
 pub enum ParseCliError {
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    TomlError(#[from] toml::de::Error),
+    Toml(#[from] toml::de::Error),
+    #[error(transparent)]
+    OverrideCli(#[from] OverrideCliError),
 }
 
 /// Parse from command line arguments and override values from config file
@@ -50,18 +95,43 @@ pub fn parse_cli_and_override(config_path: Option<PathBuf>) -> Result<Cli, Parse
     if let Some(config_path) = config_path {
         let config_str = std::fs::read_to_string(config_path)?;
         let config: FloccusCliConfig = toml::from_str(config_str.as_str())?;
-        override_cli_with(&mut cli, config);
+        override_cli_with(&mut cli, config)?;
     }
 
     Ok(cli)
 }
 
-fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) {
+fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) -> Result<(), OverrideCliError> {
     // Merge config into cli
     if config.git.enable {
+        if cli.repository_token.is_none() {
+            cli.repository_token = config.git.repository_token;
+        }
+        if cli.repository_ssh_key == PathBuf::from(&**CLI_REPOSITORY_SSH_KEY_DEFAULT) {
+            if let Some(repo_ssh_key) = config.git.repository_ssh_key {
+                if repo_ssh_key != PathBuf::from("") {
+                    cli.repository_ssh_key = repo_ssh_key;
+                }
+            }
+        }
+
         if cli.repository_url.is_none() {
             cli.repository_url = config.git.repository_url;
         }
+
+        // merge url with git token
+        if let Some(ref repository_token) = cli.repository_token {
+            let repo_url = cli.repository_url.clone();
+            if let Some(mut repo_url) = repo_url {
+                if !repository_token.is_empty() {
+                    repo_url
+                        .set_username(repository_token)
+                        .map_err(|_e| OverrideCliError::UrlSetUsername)?;
+                    cli.repository_url = Some(repo_url);
+                }
+            }
+        }
+
         if cli.repository_name == CLI_REPOSITORY_NAME_DEFAULT
             && config.git.repository_name.is_some()
         {
@@ -84,6 +154,9 @@ fn override_cli_with(cli: &mut Cli, config: FloccusCliConfig) {
             }
         }
     }
+
+    debug!("cli (with config): {:?}", cli);
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]
@@ -92,11 +165,11 @@ pub enum Commands {
     Init(InitArgs),
     #[command(about = "Print bookmarks")]
     Print(PrintArgs),
-    #[command(about = "Add bookmark(s)")]
+    #[command(about = "Add bookmark")]
     Add(AddArgs),
-    #[command(about = "Remove bookmark(s)")]
+    #[command(about = "Remove bookmark")]
     Rm(RemoveArgs),
-    #[command(about = "Find bookmark(s)")]
+    #[command(about = "Find bookmark")]
     Find(FindArgs),
 }
 
@@ -266,7 +339,7 @@ mod tests {
             "--disable-push",
         ]);
         let config: FloccusCliConfig = toml::from_str(CONFIG_1).unwrap();
-        override_cli_with(&mut cli, config);
+        override_cli_with(&mut cli, config).unwrap();
 
         if let Commands::Rm(rm_args) = cli.command {
             // Note: disable-push is set to false in config and then override by command line

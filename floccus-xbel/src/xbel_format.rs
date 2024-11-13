@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 // internal
 
+/// The title of a `Bookmark` or `Folder`
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
 pub struct Title {
     #[serde(rename = "$text")]
-    pub(crate) text: String,
+    pub text: String,
 }
 
 impl Title {
@@ -26,15 +27,15 @@ impl Title {
     }
 }
 
+/// A Bookmark aka a `Title` and usually a www url
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
 pub struct Bookmark {
     #[serde(rename = "@href")]
-    pub(crate) href: String,
+    pub href: String,
     #[serde(rename = "@id")]
-    pub(crate) id: String,
-    // #[serde(serialize_with = "serialize_title")]
-    pub(crate) title: Title,
+    pub id: String,
+    pub title: Title,
 }
 
 impl Bookmark {
@@ -47,6 +48,7 @@ impl Bookmark {
     }
 }
 
+/// An enum that is either a `Folder` or a `Bookmark`. See `XbelIterator` or `XbelNestingIterator`.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum XbelItem {
     #[serde(rename = "folder")]
@@ -62,19 +64,23 @@ impl XbelItem {
 }
 
 impl XbelItem {
-    pub(crate) fn get_title(&self) -> &Title {
+    /// Get title of Bookmark or Folder
+    pub fn get_title(&self) -> &Title {
         match self {
             XbelItem::Folder(f) => &f.title,
             XbelItem::Bookmark(b) => &b.title,
         }
     }
-    pub(crate) fn get_id(&self) -> &String {
+    /// Get id of Bookmark or Folder
+    pub fn get_id(&self) -> &String {
         match self {
             XbelItem::Folder(f) => &f.id,
             XbelItem::Bookmark(b) => &b.id,
         }
     }
-    pub(crate) fn get_url(&self) -> Option<&String> {
+
+    /// Get the url of a Bookmark or None if it's a Folder
+    pub fn get_url(&self) -> Option<&String> {
         match self {
             XbelItem::Folder(_f) => None,
             XbelItem::Bookmark(b) => Some(&b.href),
@@ -82,14 +88,15 @@ impl XbelItem {
     }
 }
 
+/// A Folder that contains folders and bookmarks
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "lowercase")]
 pub struct Folder {
     #[serde(rename = "@id")]
-    pub(crate) id: String,
-    pub(crate) title: Title,
+    pub id: String,
+    pub title: Title,
     #[serde(rename = "$value")]
-    pub(crate) items: Vec<XbelItem>,
+    pub items: Vec<XbelItem>,
 }
 
 impl Folder {
@@ -103,6 +110,7 @@ impl Folder {
     }
 }
 
+/// A struct to search inside a `Xbel` struct
 #[derive(Debug, Clone)]
 pub enum XbelPath {
     Root,
@@ -120,7 +128,7 @@ impl Display for XbelPath {
     }
 }
 
-// XBEL: XMLBookmarkExchangeLanguage
+/// Struct resulting from parsing a Xbel file
 #[derive(Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, rename = "xbel")]
 pub struct Xbel {
@@ -139,37 +147,6 @@ impl Xbel {
         }
     }
 
-    /*
-        fn xml_header(&self) -> &str {
-            r#"<?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE xbel PUBLIC "+//IDN python.org//DTD XML Bookmark Exchange Language 1.0//EN//XML" "http://pyxml.sourceforge.net/topics/dtds/xbel.dtd">"#
-        }
-
-        pub(crate) fn add_header(&self, buffer: &str) -> String {
-            let xbel_start_tag = format!(r#"<xbel version="{}">"#, self.version);
-            let xbel_start_tag_len = xbel_start_tag.chars().count();
-            let xbel_start_tag_new = format!(
-                r#"
-    <xbel version="{}">
-    <!--- highestId :{}: for Floccus bookmark sync browser extension -->
-    "#,
-                self.version,
-                self.get_highest_id()
-            );
-
-            let mut buffer_new = String::with_capacity(
-                buffer.len() - xbel_start_tag.len()
-                    + xbel_start_tag_new.len()
-                    + self.xml_header().len(),
-            );
-
-            buffer_new.push_str(self.xml_header());
-            buffer_new.push_str(xbel_start_tag_new.as_str());
-            buffer_new.extend(buffer.chars().skip(xbel_start_tag_len));
-            buffer_new
-        }
-        */
-
     pub(crate) fn get_highest_id(&self) -> u64 {
         let it = XbelIterator::new(self);
         it.fold(0, |mut acc, x| {
@@ -181,7 +158,8 @@ impl Xbel {
         })
     }
 
-    pub(crate) fn get_items_mut(&mut self, path: &XbelPath) -> Option<(usize, &mut Vec<XbelItem>)> {
+    /// Returns the mutable list of XbelItem containing the searched item (`XbelPath`)
+    pub fn get_items_mut(&mut self, path: &XbelPath) -> Option<(usize, &mut Vec<XbelItem>)> {
         match path {
             XbelPath::Root => Some((0, &mut self.items)),
             XbelPath::Id(id) => {
@@ -253,9 +231,15 @@ impl Xbel {
         }
     }
 
-    pub(crate) fn write_to_string(&self) -> String {
+    #[allow(clippy::inherent_to_string)]
+    /// Serialize to string
+    ///
+    /// This is the recommended way to serialize a Xbel that will be compatible with Floccus. Using
+    /// the derive implementation should result in a valid xml file but missing some information
+    /// and proper indentation.
+    pub fn to_string(&self) -> String {
         // Note:
-        // TODO: quick_xml limitations/bugs
+        // quick_xml 0.37 (when using the derive feature) can serialize comment (for highest_id)
 
         let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
         let comment = format!(
@@ -293,24 +277,27 @@ impl Xbel {
         result
     }
 
+    /// Create a new bookmark for this Xbel using the correct id (highest id + 1).
     pub fn new_bookmark(&self, url: &str, title: &str) -> XbelItem {
         let highest_id = self.get_highest_id();
 
         XbelItem::new_bookmark((highest_id + 1).to_string().as_str(), url, title)
     }
 
-    pub fn from_file<T: AsRef<Path>>(path: T) -> Result<Xbel, XbelError> {
+    /// Parse a file into a Xbel
+    pub fn try_from_file<T: AsRef<Path>>(path: T) -> Result<Xbel, XbelError> {
         let xbel_ = std::fs::File::open(path)?;
         let xbel: Xbel = from_reader(BufReader::new(xbel_))?;
         Ok(xbel)
     }
 
-    pub fn to_file<T: AsRef<Path>>(&self, file_path: T) -> Result<(), XbelError> {
+    /// Write Xbel to a file
+    pub fn try_to_file<T: AsRef<Path>>(&self, file_path: T) -> Result<(), XbelError> {
         let mut f = std::fs::File::options()
             .write(true)
             .truncate(true)
             .open(file_path)?;
-        let buffer = self.write_to_string();
+        let buffer = self.to_string();
         f.write_all(buffer.as_bytes())?;
         Ok(())
     }
@@ -320,7 +307,7 @@ impl Xbel {
 pub enum XbelError {
     #[error("Error while reading Xbel file: {0}")]
     IoError(#[from] std::io::Error),
-    #[error("Cannot read Xbel file: {0}")]
+    #[error("Cannot parse Xbel file: {0}")]
     XbelReadError(#[from] quick_xml::de::DeError),
 }
 
@@ -380,6 +367,7 @@ impl<'a> IntoIterator for &'a Xbel {
     }
 }
 
+/// A DFS Iterator for Xbel
 pub struct XbelIterator<'s> {
     xbel: &'s Xbel,
     initial: bool,
@@ -416,6 +404,7 @@ impl<'a> Iterator for XbelIterator<'a> {
     }
 }
 
+/// Either a `XbelItem` or the end of a Folder
 #[derive(Debug)]
 pub enum XbelItemOrEnd<'s> {
     Item(&'s XbelItem),
@@ -423,6 +412,7 @@ pub enum XbelItemOrEnd<'s> {
     End(String), // id
 }
 
+/// A DFS Iterator for Xbel (but with nesting information)
 pub struct XbelNestingIterator<'s> {
     xbel: &'s Xbel,
     initial: bool,
@@ -430,7 +420,7 @@ pub struct XbelNestingIterator<'s> {
 }
 
 impl<'s> XbelNestingIterator<'s> {
-    pub(crate) fn new(xbel: &'s Xbel) -> Self {
+    pub fn new(xbel: &'s Xbel) -> Self {
         Self {
             xbel,
             initial: true,
@@ -465,6 +455,7 @@ impl<'a> Iterator for XbelNestingIterator<'a> {
 mod tests {
     use super::*;
     use quick_xml::de::from_str;
+    use tracing_test::traced_test;
 
     const XBEL_EMPTY: &str = r#"
             <?xml version="1.0" encoding="UTF-8"?>
@@ -537,6 +528,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn read_xbel_empty() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read an empty xbel file
         let xbel: Xbel = from_str(XBEL_EMPTY)?;
@@ -546,6 +538,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn read_xbel_1() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -579,6 +572,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn xbel_iter() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file and to iterate over content
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -628,6 +622,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn xbel_nesting_iter() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file and to iterate over content
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -670,6 +665,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn xbel_highest_id() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Try to read a valid xbel file and to iterate over content
         let xbel: Xbel = from_str(XBEL_BANK)?;
@@ -678,6 +674,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn add_xbel_empty() -> Result<(), quick_xml::errors::serialize::DeError> {
         // Add bookmark to empty Xbel
         let mut xbel: Xbel = from_str(XBEL_EMPTY)?;
@@ -700,6 +697,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn add_xbel_1() -> Result<(), quick_xml::errors::serialize::DeError> {
         let mut xbel: Xbel = from_str(XBEL_BANK)?;
         println!("xbel: {:?}", xbel);
@@ -713,28 +711,8 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn write_xbel() -> Result<(), quick_xml::errors::serialize::DeError> {
-        /*
-        let url_e = "www.ecosia.org";
-        let bookmark_e = XbelItem::Bookmark(
-            Bookmark::new("1", url_e, "My main search engine")
-        );
-        let url_g = "www.google.com";
-        let title_g = "A good search engine";
-        let bookmark_g = XbelItem::Bookmark(
-            Bookmark::new("4", url_g, title_g)
-        );
-        let url_b = "www.bing.com";
-        let bookmark_b = XbelItem::Bookmark(
-            Bookmark::new("5", url_b, "Another good search engine")
-        );
-
-        let folder_a = XbelItem::Folder(Folder::new("2", "Search engines", Some(vec![
-            bookmark_g,
-            bookmark_b
-        ])));
-        */
-
         let bookmark_b1 = XbelItem::Bookmark(Bookmark::new(
             "3",
             "https://www.bank1.com/",
@@ -754,10 +732,10 @@ mod tests {
 
         let xbel = Xbel::new(Some(vec![folder_i1]));
 
-        let buffer = xbel.write_to_string();
+        let buffer = xbel.to_string();
         // println!("buffer:");
         // println!("{}", buffer);
-        let bank_v1 = std::fs::read_to_string("ressources/bookmarks_bank_v1.xbel").unwrap();
+        let bank_v1 = std::fs::read_to_string("../ressources/bookmarks_bank_v1.xbel").unwrap();
         assert_eq!(buffer, bank_v1);
 
         /*

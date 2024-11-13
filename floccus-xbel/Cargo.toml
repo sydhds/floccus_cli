@@ -1,0 +1,13 @@
+[package]
+name = "floccus-xbel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quick-xml = {workspace = true}
+serde = {workspace = true}
+thiserror = {workspace = true}
+
+[dev-dependencies]
+tracing = {workspace = true}
+tracing-test = {workspace = true}

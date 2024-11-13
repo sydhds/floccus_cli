@@ -1,43 +1,72 @@
-use std::path::Path;
-
+// std
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+// third-party
 use git2::build::{CheckoutBuilder, RepoBuilder};
-use git2::{FetchOptions, Repository};
+use git2::{Cred, FetchOptions, Progress, RemoteCallbacks, Repository};
+use tracing::{debug, info, warn};
+use url::Url;
 
-pub fn git_clone(url: &str, to_path: &Path) -> Result<Repository, git2::Error> {
-    /*
+struct State {
+    progress: Option<Progress<'static>>,
+    total: usize,
+    current: usize,
+    path: Option<PathBuf>,
+    // newline: bool,
+}
+
+pub fn git_clone(
+    url: &Url,
+    to_path: &Path,
+    ssh_key: Option<&Path>,
+) -> Result<Repository, git2::Error> {
     let state = RefCell::new(State {
         progress: None,
         total: 0,
         current: 0,
         path: None,
-        newline: false,
+        // newline: false,
     });
     let mut cb = RemoteCallbacks::new();
+
+    if url.scheme() == "ssh" {
+        if let Some(ssh_key) = ssh_key {
+            cb.credentials(|_url, username_from_url, _allowed_types| {
+                Cred::ssh_key(
+                    username_from_url.unwrap(), // Safe to unwrap - as url is of Url type
+                    None,
+                    ssh_key,
+                    None,
+                )
+            });
+        }
+    }
+
     cb.transfer_progress(|stats| {
         let mut state = state.borrow_mut();
         state.progress = Some(stats.to_owned());
-        print(&mut *state);
+        // TODO
+        // print(&mut *state);
         true
     });
-    */
 
-    let co = CheckoutBuilder::new();
-    /*
+    let mut co = CheckoutBuilder::new();
     co.progress(|path, cur, total| {
         let mut state = state.borrow_mut();
         state.path = path.map(|p| p.to_path_buf());
         state.current = cur;
         state.total = total;
-        print(&mut *state);
+        // print(&mut *state);
     });
-    */
 
-    let fo = FetchOptions::new();
-    // fo.remote_callbacks(cb);
-    RepoBuilder::new()
-        .fetch_options(fo)
+    let mut fetch_opts = FetchOptions::new();
+    fetch_opts.remote_callbacks(cb);
+    let repo = RepoBuilder::new()
+        .fetch_options(fetch_opts)
         .with_checkout(co)
-        .clone(url, to_path)
+        .clone(url.to_string().as_str(), to_path)?;
+
+    Ok(repo)
 }
 
 pub fn git_fetch<'a>(
@@ -70,21 +99,21 @@ pub fn git_fetch<'a>(
     });
     */
 
-    let mut fo = git2::FetchOptions::new();
-    // fo.remote_callbacks(cb);
+    let mut fetch_opts = git2::FetchOptions::new();
+    // fetch_opts.remote_callbacks(cb);
 
     // Always fetch all tags.
     // Perform a download and also update tips
-    fo.download_tags(git2::AutotagOption::All);
-    println!("Fetching {} for repo", remote.name().unwrap());
-    remote.fetch(refs, Some(&mut fo), None)?;
+    fetch_opts.download_tags(git2::AutotagOption::All);
+    debug!("Fetching {} for repo", remote.name().unwrap());
+    remote.fetch(refs, Some(&mut fetch_opts), None)?;
 
     // If there are local objects (we got a thin pack), then tell the user
     // how many objects we saved from having to cross the network.
     let stats = remote.stats();
     if stats.local_objects() > 0 {
-        println!(
-            "\rReceived {}/{} objects in {} bytes (used {} local \
+        info!(
+            "Received {}/{} objects in {} bytes (used {} local \
              objects)",
             stats.indexed_objects(),
             stats.total_objects(),
@@ -92,8 +121,8 @@ pub fn git_fetch<'a>(
             stats.local_objects()
         );
     } else {
-        println!(
-            "\rReceived {}/{} objects in {} bytes",
+        info!(
+            "Received {}/{} objects in {} bytes",
             stats.indexed_objects(),
             stats.total_objects(),
             stats.received_bytes()
@@ -114,7 +143,7 @@ fn fast_forward(
         None => String::from_utf8_lossy(lb.name_bytes()).to_string(),
     };
     let msg = format!("Fast-Forward: Setting {} to id: {}", name, rc.id());
-    println!("{}", msg);
+    info!("{}", msg);
     lb.set_target(rc.id(), &msg)?;
     repo.set_head(&name)?;
     repo.checkout_head(Some(
@@ -140,7 +169,7 @@ fn normal_merge(
     let mut idx = repo.merge_trees(&ancestor, &local_tree, &remote_tree, None)?;
 
     if idx.has_conflicts() {
-        println!("Merge conflicts detected...");
+        warn!("Merge conflicts detected...");
         repo.checkout_index(Some(&mut idx), None)?;
         return Ok(());
     }
@@ -174,7 +203,7 @@ pub fn git_merge<'a>(
 
     // 2. Do the appropriate merge
     if analysis.0.is_fast_forward() {
-        println!("Doing a fast forward");
+        debug!("Doing a fast forward");
         // do a fast forward
         let refname = format!("refs/heads/{}", remote_branch);
         match repo.find_reference(&refname) {
@@ -205,7 +234,7 @@ pub fn git_merge<'a>(
         let head_commit = repo.reference_to_annotated_commit(&repo.head()?)?;
         normal_merge(repo, &head_commit, &fetch_commit)?;
     } else {
-        println!("Nothing to do...");
+        info!("Nothing to do...");
     }
     Ok(())
 }
@@ -216,7 +245,7 @@ pub fn git_push(repo: &Repository, file_to_add: &Path) -> Result<(), git2::Error
 
     // git add
     let status = repo.status_file(file_to_add)?;
-    println!("status: {:?}", status);
+    info!("status: {:?}", status);
     let mut index = repo.index()?;
 
     index.add_path(file_to_add)?;
