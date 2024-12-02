@@ -23,5 +23,5 @@ toml_edit = "0.22.22"
 tempfile = "3.13.0"
 regex = "1.11.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tracing = "0.1.40"
+tracing = "0.1.41"
 tracing-test = "0.2.5"
