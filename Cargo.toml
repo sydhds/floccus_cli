@@ -17,7 +17,7 @@ url = { version = "2.5.4", features = ["serde"] }
 quick-xml = { version = "0.37.2", features = ["serde", "serialize"] }
 directories = "6.0.0"
 thiserror = "2.0.3"
-anyhow = "1.0.93"
+anyhow = "1.0.95"
 toml = "0.8.19"
 toml_edit = "0.22.22"
 tempfile = "3.15.0"
