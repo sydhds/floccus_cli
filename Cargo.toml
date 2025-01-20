@@ -10,7 +10,7 @@ codegen-units = 1
 lto = "fat"
 
 [workspace.dependencies]
-clap = { version = "4.5.26", features = ["derive"] }
+clap = { version = "4.5.27", features = ["derive"] }
 serde = { version = "1.0.215", features = ["derive"] }
 git2 = "0.19.0"
 url = { version = "2.5.4", features = ["serde"] }
